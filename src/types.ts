@@ -67,6 +67,23 @@ export interface ThreadContext {
 /** PR status state */
 export type PrStatusState = 'succeeded' | 'failed' | 'pending' | 'error' | 'notApplicable';
 
+/** Summary of an active pull request from Azure DevOps */
+export interface PullRequestSummary {
+  pullRequestId: number;
+  title: string;
+  description?: string;
+  status: string;
+  sourceRefName: string;
+  targetRefName: string;
+  repository: {
+    id: string;
+    name: string;
+    project: { id: string; name: string };
+  };
+  creationDate: string;
+  lastMergeSourceCommit?: { commitId: string };
+}
+
 /** Logger interface — users can provide their own */
 export interface Logger {
   info(message: string): void;

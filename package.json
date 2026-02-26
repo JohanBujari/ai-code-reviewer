@@ -1,10 +1,13 @@
 {
   "name": "azure-devops-pr-reviewer",
-  "version": "1.0.0",
-  "description": "AI-powered pull request reviewer for Azure DevOps. Supports Azure OpenAI, OpenAI, and Claude.",
+  "version": "1.1.0",
+  "description": "AI-powered pull request reviewer for Azure DevOps. Supports Azure OpenAI, OpenAI, and Claude. Includes CLI watcher with TUI.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "pr-agent": "./dist/cli.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -30,15 +33,29 @@
     "anthropic",
     "pr-review",
     "devops",
-    "automation"
+    "automation",
+    "tui",
+    "cli"
   ],
   "author": "",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
+  "dependencies": {
+    "ai": "^4.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/azure": "^1.0.0",
+    "zod": "^3.23.0",
+    "ink": "^5.0.0",
+    "react": "^18.0.0",
+    "commander": "^12.0.0",
+    "dotenv": "^16.0.0"
+  },
   "devDependencies": {
     "@types/node": "^25.3.0",
+    "@types/react": "^18.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   }

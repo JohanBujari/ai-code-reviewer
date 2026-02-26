@@ -63,6 +63,7 @@ export type {
   PrIteration,
   PrIterationChange,
   ThreadContext,
+  PullRequestSummary,
   PrStatusState,
   Logger,
 } from './types';

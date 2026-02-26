@@ -4,6 +4,7 @@ import type {
   PrIteration,
   PrIterationChange,
   PrStatusState,
+  PullRequestSummary,
   ThreadContext,
 } from '../types';
 
@@ -22,6 +23,27 @@ export class AzureDevOpsClient {
     private readonly logger: Logger,
   ) {
     this.authHeader = `Basic ${btoa(`:${pat}`)}`;
+  }
+
+  async listActivePullRequests(
+    project: string,
+    repoId: string,
+    top = 20,
+  ): Promise<PullRequestSummary[]> {
+    const params = new URLSearchParams({
+      'searchCriteria.status': 'active',
+      '$top': String(top),
+      'api-version': this.apiVersion,
+    });
+    const baseUrl = this.buildUrl(project, repoId, 'pullrequests');
+    const response = await fetch(`${baseUrl}?${params}`, {
+      headers: { Authorization: this.authHeader },
+    });
+    if (!response.ok) {
+      throw new Error(`Azure DevOps API error: ${response.status} ${response.statusText}`);
+    }
+    const data = (await response.json()) as DevOpsListResponse<PullRequestSummary>;
+    return data.value;
   }
 
   async getPrIterations(
