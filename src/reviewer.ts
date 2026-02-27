@@ -1,11 +1,13 @@
-import type { AiConfig, PrReviewerOptions } from './config';
-import { DEFAULTS, SKIP_PATTERNS } from './config';
-import { AzureDevOpsClient } from './azure-devops/client';
-import type { AiProvider } from './ai/provider';
-import { SYSTEM_PROMPT } from './ai/provider';
-import { AzureOpenAiProvider } from './ai/azure-openai';
-import { OpenAiProvider } from './ai/openai';
-import { AnthropicProvider } from './ai/anthropic';
+import { createPatch } from "diff";
+import type { AiConfig, PrReviewerOptions } from "./config";
+import { DEFAULTS, SKIP_PATTERNS } from "./config";
+import { AzureDevOpsClient } from "./azure-devops/client";
+import type { AiProvider, ReviewContext } from "./ai/provider";
+import { SYSTEM_PROMPT } from "./ai/provider";
+import { AzureOpenAiProvider } from "./ai/azure-openai";
+import { OpenAiProvider } from "./ai/openai";
+import { AnthropicProvider } from "./ai/anthropic";
+import { VercelAiProvider } from "./ai/vercel-ai-provider";
 import type {
   Logger,
   PrFileChange,
@@ -13,14 +15,33 @@ import type {
   ReviewComment,
   ReviewResult,
   WebhookPayload,
-} from './types';
+} from "./types";
 
 const SEVERITY_EMOJI: Record<string, string> = {
-  critical: '🔴',
-  warning: '🟡',
-  suggestion: '🔵',
-  nitpick: '⚪',
+  critical: "🔴",
+  warning: "🟡",
+  suggestion: "🔵",
+  nitpick: "⚪",
 };
+
+/** Key files that reveal project conventions and tech stack */
+const PROJECT_CONTEXT_FILES = [
+  "/README.md",
+  "/package.json",
+  "/tsconfig.json",
+  "/pyproject.toml",
+  "/requirements.txt",
+  "/.eslintrc.json",
+  "/.eslintrc.js",
+  "/biome.json",
+  "/Cargo.toml",
+  "/go.mod",
+  "/pom.xml",
+  "/build.gradle",
+  "/Makefile",
+  "/Dockerfile",
+  "/docker-compose.yml",
+];
 
 const defaultLogger: Logger = {
   info: (msg) => console.log(`[pr-reviewer] ${msg}`),
@@ -28,13 +49,19 @@ const defaultLogger: Logger = {
   error: (msg) => console.error(`[pr-reviewer] ${msg}`),
 };
 
-function createAiProvider(config: AiConfig): AiProvider {
+function createAiProvider(config: AiConfig, useVercelSdk = true): AiProvider {
+  // Default to Vercel AI SDK provider — supports tools and agentic review
+  if (useVercelSdk) {
+    return new VercelAiProvider(config);
+  }
+
+  // Fallback to direct API providers (no tool support)
   switch (config.provider) {
-    case 'azure-openai':
+    case "azure-openai":
       return new AzureOpenAiProvider(config);
-    case 'openai':
+    case "openai":
       return new OpenAiProvider(config);
-    case 'anthropic':
+    case "anthropic":
       return new AnthropicProvider(config);
   }
 }
@@ -73,10 +100,10 @@ export class PrReviewer {
     if (authHeader === secret) return true;
 
     // Support Basic auth with empty username: "Basic base64(:secret)"
-    if (authHeader.startsWith('Basic ')) {
+    if (authHeader.startsWith("Basic ")) {
       try {
-        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString();
-        const password = decoded.startsWith(':') ? decoded.slice(1) : decoded;
+        const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
+        const password = decoded.startsWith(":") ? decoded.slice(1) : decoded;
         return password === secret;
       } catch {
         return false;
@@ -91,7 +118,7 @@ export class PrReviewer {
     const payload = body as WebhookPayload;
 
     if (!payload?.resource?.pullRequestId || !payload?.resource?.repository) {
-      this.logger.warn('Invalid webhook payload — missing required fields');
+      this.logger.warn("Invalid webhook payload — missing required fields");
       return;
     }
 
@@ -117,18 +144,24 @@ export class PrReviewer {
     const iterations = await this.devOps.getPrIterations(project, repoId, prId);
     if (iterations.length === 0) {
       this.logger.warn(`No iterations found for PR #${prId}`);
-      return { summary: 'No iterations found.', comments: [] };
+      return { summary: "No iterations found.", comments: [] };
     }
 
     const latestIteration = iterations[iterations.length - 1];
     const dedupKey = `${prId}-${latestIteration.id}`;
     if (this.isDuplicate(dedupKey)) {
       this.logger.info(`Skipping duplicate review for ${dedupKey}`);
-      return { summary: 'Duplicate review skipped.', comments: [] };
+      return { summary: "Duplicate review skipped.", comments: [] };
     }
 
     try {
-      await this.devOps.setPrStatus(project, repoId, prId, 'pending', 'AI code review in progress...');
+      await this.devOps.setPrStatus(
+        project,
+        repoId,
+        prId,
+        "pending",
+        "AI code review in progress...",
+      );
 
       const changes = await this.devOps.getIterationChanges(
         project,
@@ -141,10 +174,11 @@ export class PrReviewer {
       const cappedChanges = reviewableChanges.slice(0, this.maxFiles);
       const skippedCount = reviewableChanges.length - cappedChanges.length;
 
-      const fileChanges = await this.fetchFileContents(
+      const fileChanges = await this.fetchFileDiffs(
         project,
         repoId,
         cappedChanges,
+        latestIteration.targetRefCommit.commitId,
         latestIteration.sourceRefCommit.commitId,
       );
 
@@ -154,13 +188,36 @@ export class PrReviewer {
           project,
           repoId,
           prId,
-          'succeeded',
-          'AI review: No reviewable changes found.',
+          "succeeded",
+          "AI review: No reviewable changes found.",
         );
-        return { summary: 'No reviewable changes found.', comments: [] };
+        return { summary: "No reviewable changes found.", comments: [] };
       }
 
-      const reviewResult = await this.runAiReview(fileChanges, prTitle ?? `PR #${prId}`, prDescription);
+      // Build context so the AI can use tools to explore the repo
+      const reviewContext: ReviewContext = {
+        devOps: this.devOps,
+        project,
+        repoId,
+        prId,
+        commitId: latestIteration.sourceRefCommit.commitId,
+        logger: this.logger,
+      };
+
+      // Pre-fetch project context (structure + key config files)
+      const projectContext = await this.fetchProjectContext(
+        project,
+        repoId,
+        latestIteration.sourceRefCommit.commitId,
+      );
+
+      const reviewResult = await this.runAiReview(
+        fileChanges,
+        prTitle ?? `PR #${prId}`,
+        prDescription,
+        reviewContext,
+        projectContext,
+      );
 
       for (const comment of reviewResult.comments) {
         await this.postInlineComment(project, repoId, prId, comment);
@@ -172,32 +229,49 @@ export class PrReviewer {
         fileChanges.length,
         skippedCount,
       );
-      await this.devOps.createGeneralComment(project, repoId, prId, summaryMarkdown);
+      await this.devOps.createGeneralComment(
+        project,
+        repoId,
+        prId,
+        summaryMarkdown,
+      );
 
-      const hasCritical = reviewResult.comments.some((c) => c.severity === 'critical');
+      const hasCritical = reviewResult.comments.some(
+        (c) => c.severity === "critical",
+      );
       await this.devOps.setPrStatus(
         project,
         repoId,
         prId,
-        hasCritical ? 'failed' : 'succeeded',
+        hasCritical ? "failed" : "succeeded",
         hasCritical
           ? `AI review: ${reviewResult.comments.length} issue(s) found, including critical`
           : `AI review: ${reviewResult.comments.length} issue(s) found`,
       );
 
       this.markProcessed(dedupKey);
-      this.logger.info(`Completed review for PR #${prId}: ${reviewResult.comments.length} comments`);
+      this.logger.info(
+        `Completed review for PR #${prId}: ${reviewResult.comments.length} comments`,
+      );
 
       return reviewResult;
     } catch (error) {
       this.logger.error(`Review failed for PR #${prId}: ${error}`);
       await this.postErrorComment(project, repoId, prId, error);
       await this.devOps
-        .setPrStatus(project, repoId, prId, 'error', 'AI review encountered an error')
-        .catch((statusError) => this.logger.warn(`Failed to set error status: ${statusError}`));
+        .setPrStatus(
+          project,
+          repoId,
+          prId,
+          "error",
+          "AI review encountered an error",
+        )
+        .catch((statusError) =>
+          this.logger.warn(`Failed to set error status: ${statusError}`),
+        );
 
       return {
-        summary: 'AI review encountered an error.',
+        summary: "AI review encountered an error.",
         comments: [],
       };
     }
@@ -209,14 +283,25 @@ export class PrReviewer {
     files: PrFileChange[],
     prTitle: string,
     prDescription?: string,
+    reviewContext?: ReviewContext,
+    projectContext?: string,
   ): Promise<ReviewResult> {
     const chunks = this.chunkFiles(files);
     const allComments: ReviewComment[] = [];
     const summaries: string[] = [];
 
     for (const chunk of chunks) {
-      const userPrompt = this.buildUserPrompt(chunk, prTitle, prDescription);
-      const responseText = await this.ai.review(this.systemPrompt, userPrompt);
+      const userPrompt = this.buildUserPrompt(
+        chunk,
+        prTitle,
+        prDescription,
+        projectContext,
+      );
+      const responseText = await this.ai.review(
+        this.systemPrompt,
+        userPrompt,
+        reviewContext,
+      );
       const result = this.parseReviewResponse(responseText);
       allComments.push(...result.comments);
       summaries.push(result.summary);
@@ -227,29 +312,121 @@ export class PrReviewer {
         ? summaries[0]
         : `Review across ${chunks.length} chunks:\n\n${summaries
             .map((s, i) => `**Part ${i + 1}:** ${s}`)
-            .join('\n\n')}`;
+            .join("\n\n")}`;
 
     return { summary: combinedSummary, comments: allComments };
   }
 
-  private buildUserPrompt(files: PrFileChange[], prTitle: string, prDescription?: string): string {
+  /**
+   * Pre-fetch the repository tree and key config files to build a project
+   * context string that is injected into the user prompt. This gives the AI
+   * immediate awareness of the tech stack, structure, and conventions —
+   * without requiring a tool call round-trip.
+   */
+  private async fetchProjectContext(
+    project: string,
+    repoId: string,
+    commitId: string,
+  ): Promise<string | undefined> {
+    try {
+      const tree = await this.devOps.getRepoTree(
+        project,
+        repoId,
+        commitId,
+        "/",
+      );
+      if (tree.length === 0) return undefined;
+
+      const skipDirs = [
+        "/node_modules",
+        "/dist",
+        "/.git",
+        "/vendor",
+        "/__pycache__",
+        "/build",
+        "/.next",
+      ];
+      const filtered = tree.filter(
+        (item) =>
+          !skipDirs.some(
+            (skip) =>
+              item.path.startsWith(skip) || item.path.includes(`${skip}/`),
+          ),
+      );
+
+      const treeView = filtered
+        .slice(0, 150)
+        .map((item) => (item.isFolder ? `${item.path}/` : item.path))
+        .join("\n");
+
+      // Read key config files that exist in the repo
+      const existingPaths = new Set(tree.map((item) => item.path));
+      const configSections: string[] = [];
+
+      for (const filePath of PROJECT_CONTEXT_FILES) {
+        if (existingPaths.has(filePath)) {
+          const content = await this.devOps.getFileContent(
+            project,
+            repoId,
+            filePath,
+            commitId,
+          );
+          if (content) {
+            const truncated =
+              content.length > 3_000
+                ? content.slice(0, 3_000) + "\n... (truncated)"
+                : content;
+            configSections.push(
+              `### ${filePath}\n\`\`\`\n${truncated}\n\`\`\``,
+            );
+          }
+        }
+      }
+
+      const parts = [
+        `**Repository structure** (${filtered.filter((i) => !i.isFolder).length} files):\n\`\`\`\n${treeView}\n\`\`\``,
+      ];
+      if (configSections.length > 0) {
+        parts.push(configSections.join("\n\n"));
+      }
+
+      return parts.join("\n\n");
+    } catch (error) {
+      this.logger.warn(`Failed to fetch project context: ${error}`);
+      return undefined;
+    }
+  }
+
+  private buildUserPrompt(
+    files: PrFileChange[],
+    prTitle: string,
+    prDescription?: string,
+    projectContext?: string,
+  ): string {
     const header = [`**PR Title:** ${prTitle}`];
     if (prDescription) {
       header.push(`**PR Description:** ${prDescription}`);
     }
     header.push(`**Files changed:** ${files.length}`);
-    header.push('');
+    header.push("");
+
+    if (projectContext) {
+      header.push("## Project Context");
+      header.push(projectContext);
+      header.push("");
+    }
 
     const fileBlocks = files.map((file) => {
       const truncated =
         file.content.length > this.maxDiffLength
-          ? file.content.slice(0, this.maxDiffLength) + '\n... (truncated, file too large)'
+          ? file.content.slice(0, this.maxDiffLength) +
+            "\n... (truncated, diff too large)"
           : file.content;
 
-      return `### ${file.changeType.toUpperCase()}: ${file.filePath}\n\`\`\`\n${truncated}\n\`\`\``;
+      return `### ${file.changeType.toUpperCase()}: ${file.filePath}\n\`\`\`diff\n${truncated}\n\`\`\``;
     });
 
-    return header.join('\n') + fileBlocks.join('\n\n');
+    return header.join("\n") + fileBlocks.join("\n\n");
   }
 
   private parseReviewResponse(responseText: string): ReviewResult {
@@ -259,11 +436,11 @@ export class PrReviewer {
         comments?: ReviewComment[];
       };
       return {
-        summary: parsed.summary ?? 'No summary provided.',
+        summary: parsed.summary ?? "No summary provided.",
         comments: Array.isArray(parsed.comments) ? parsed.comments : [],
       };
     } catch {
-      this.logger.warn('Failed to parse AI response as JSON');
+      this.logger.warn("Failed to parse AI response as JSON");
       return {
         summary: responseText.slice(0, 2000),
         comments: [],
@@ -278,7 +455,10 @@ export class PrReviewer {
 
     for (const file of files) {
       const fileSize = file.content.length + file.filePath.length + 100;
-      if (currentSize + fileSize > DEFAULTS.maxCharsPerChunk && currentChunk.length > 0) {
+      if (
+        currentSize + fileSize > DEFAULTS.maxCharsPerChunk &&
+        currentChunk.length > 0
+      ) {
         chunks.push(currentChunk);
         currentChunk = [];
         currentSize = 0;
@@ -296,19 +476,22 @@ export class PrReviewer {
 
   // ── File Fetching ──────────────────────────────────────────
 
-  private filterReviewableChanges(changes: PrIterationChange[]): PrIterationChange[] {
+  private filterReviewableChanges(
+    changes: PrIterationChange[],
+  ): PrIterationChange[] {
     return changes.filter((change) => {
-      if (change.changeType === 'delete') return false;
+      if (change.changeType === "delete") return false;
       const path = change.item.path;
       return !this.skipPatterns.some((pattern) => pattern.test(path));
     });
   }
 
-  private async fetchFileContents(
+  private async fetchFileDiffs(
     project: string,
     repoId: string,
     changes: PrIterationChange[],
-    commitId: string,
+    baseCommitId: string,
+    headCommitId: string,
   ): Promise<PrFileChange[]> {
     const fileChanges: PrFileChange[] = [];
 
@@ -316,16 +499,45 @@ export class PrReviewer {
       const batch = changes.slice(i, i + DEFAULTS.fileFetchBatchSize);
       const results = await Promise.all(
         batch.map(async (change) => {
-          const content = await this.devOps.getFileContent(
-            project,
-            repoId,
-            change.item.path,
-            commitId,
+          const filePath = change.item.path;
+          const isAdd = change.changeType === "add";
+
+          // For new files, base is empty. For edits, fetch both versions.
+          const [baseContent, headContent] = await Promise.all([
+            isAdd
+              ? Promise.resolve("")
+              : this.devOps.getFileContent(
+                  project,
+                  repoId,
+                  filePath,
+                  baseCommitId,
+                ),
+            this.devOps.getFileContent(project, repoId, filePath, headCommitId),
+          ]);
+
+          if (!headContent) return null;
+
+          // Compute a unified diff showing only what changed
+          const patch = createPatch(
+            filePath,
+            baseContent,
+            headContent,
+            "base",
+            "PR head",
+            {
+              context: 3,
+            },
           );
-          return { filePath: change.item.path, changeType: change.changeType, content };
+
+          return { filePath, changeType: change.changeType, content: patch };
         }),
       );
-      fileChanges.push(...results.filter((f) => f.content.length > 0));
+
+      fileChanges.push(
+        ...results.filter(
+          (f): f is PrFileChange => f !== null && f.content.length > 0,
+        ),
+      );
     }
 
     return fileChanges;
@@ -339,7 +551,7 @@ export class PrReviewer {
     prId: number,
     comment: ReviewComment,
   ): Promise<void> {
-    const emoji = SEVERITY_EMOJI[comment.severity] ?? '⚪';
+    const emoji = SEVERITY_EMOJI[comment.severity] ?? "⚪";
     const lineNumber = Math.max(comment.lineNumber, 1);
     const content = `${emoji} **${comment.severity.toUpperCase()}**: ${comment.message}`;
 
@@ -363,10 +575,18 @@ export class PrReviewer {
     skippedCount: number,
   ): string {
     const providerName = this.options.ai.provider;
-    const lines = ['## 🤖 AI Code Review Summary', '', summary, '', `**Files reviewed:** ${filesReviewed}`];
+    const lines = [
+      "## 🤖 AI Code Review Summary",
+      "",
+      summary,
+      "",
+      `**Files reviewed:** ${filesReviewed}`,
+    ];
 
     if (skippedCount > 0) {
-      lines.push(`**Files skipped (over limit):** ${skippedCount} (max ${this.maxFiles})`);
+      lines.push(
+        `**Files skipped (over limit):** ${skippedCount} (max ${this.maxFiles})`,
+      );
     }
 
     if (comments.length > 0) {
@@ -378,17 +598,21 @@ export class PrReviewer {
         {} as Record<string, number>,
       );
 
-      lines.push('', '**Issues found:**');
+      lines.push("", "**Issues found:**");
       for (const [severity, count] of Object.entries(bySeverity)) {
-        const emoji = SEVERITY_EMOJI[severity] ?? '⚪';
+        const emoji = SEVERITY_EMOJI[severity] ?? "⚪";
         lines.push(`- ${emoji} ${severity}: ${count}`);
       }
     } else {
-      lines.push('', '✅ No issues found. Code looks good!');
+      lines.push("", "✅ No issues found. Code looks good!");
     }
 
-    lines.push('', '---', `*Powered by ${providerName} • azure-devops-pr-reviewer*`);
-    return lines.join('\n');
+    lines.push(
+      "",
+      "---",
+      `*Powered by ${providerName} • azure-devops-pr-reviewer*`,
+    );
+    return lines.join("\n");
   }
 
   private async postErrorComment(
@@ -399,20 +623,22 @@ export class PrReviewer {
   ): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     const content = [
-      '## 🤖 AI Code Review',
-      '',
-      '⚠️ The automated review encountered an error and could not complete.',
-      '',
+      "## 🤖 AI Code Review",
+      "",
+      "⚠️ The automated review encountered an error and could not complete.",
+      "",
       `**Error:** ${message}`,
-      '',
-      '---',
-      '*Powered by azure-devops-pr-reviewer*',
-    ].join('\n');
+      "",
+      "---",
+      "*Powered by azure-devops-pr-reviewer*",
+    ].join("\n");
 
     try {
       await this.devOps.createGeneralComment(project, repoId, prId, content);
     } catch (commentError) {
-      this.logger.error(`Failed to post error comment on PR #${prId}: ${commentError}`);
+      this.logger.error(
+        `Failed to post error comment on PR #${prId}: ${commentError}`,
+      );
     }
   }
 

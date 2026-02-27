@@ -40,7 +40,7 @@ export const DEFAULTS = {
   maxFiles: 30,
   maxDiffLength: 10_000,
   openAiModel: 'gpt-5.2',
-  anthropicModel: 'claude-sonnet-4-20250514',
+  anthropicModel: 'claude-sonnet-4-5',
   azureOpenAiApiVersion: '2024-02-01',
   devOpsApiVersion: '7.1',
   dedupTtlMs: 10 * 60 * 1000,

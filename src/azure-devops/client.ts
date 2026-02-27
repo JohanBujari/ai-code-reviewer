@@ -130,6 +130,72 @@ export class AzureDevOpsClient {
     });
   }
 
+  async getPrThreads(
+    project: string,
+    repoId: string,
+    prId: number,
+  ): Promise<Array<{ id: number; status: string; comments: Array<{ content: string }> }>> {
+    const url = this.buildUrl(project, repoId, `pullrequests/${prId}/threads`);
+    const response = await this.get<
+      DevOpsListResponse<{ id: number; status: string; comments: Array<{ content: string }> }>
+    >(url);
+    return response.value;
+  }
+
+  async getFileCommits(
+    project: string,
+    repoId: string,
+    filePath: string,
+    top = 5,
+  ): Promise<Array<{ commitId: string; comment: string; author: { name: string }; committer: { date: string } }>> {
+    const params = new URLSearchParams({
+      'searchCriteria.itemPath': filePath,
+      '$top': String(top),
+      'api-version': this.apiVersion,
+    });
+    const baseUrl = this.buildUrl(project, repoId, 'commits');
+    const response = await fetch(`${baseUrl}?${params}`, {
+      headers: { Authorization: this.authHeader },
+    });
+    if (!response.ok) return [];
+    const data = (await response.json()) as DevOpsListResponse<{
+      commitId: string;
+      comment: string;
+      author: { name: string };
+      committer: { date: string };
+    }>;
+    return data.value;
+  }
+
+  async getRepoTree(
+    project: string,
+    repoId: string,
+    commitId: string,
+    scopePath = '/',
+  ): Promise<Array<{ path: string; isFolder: boolean }>> {
+    const params = new URLSearchParams({
+      scopePath,
+      recursionLevel: 'Full',
+      'versionDescriptor.version': commitId,
+      'versionDescriptor.versionType': 'commit',
+      'api-version': this.apiVersion,
+    });
+    const url = `${this.buildUrl(project, repoId, 'items')}?${params}`;
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: this.authHeader },
+      });
+      if (!response.ok) return [];
+      const data = (await response.json()) as DevOpsListResponse<{
+        path: string;
+        isFolder: boolean;
+      }>;
+      return data.value;
+    } catch {
+      return [];
+    }
+  }
+
   async setPrStatus(
     project: string,
     repoId: string,
