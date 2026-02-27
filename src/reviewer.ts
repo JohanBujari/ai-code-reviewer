@@ -4,9 +4,6 @@ import { DEFAULTS, SKIP_PATTERNS } from "./config";
 import { AzureDevOpsClient } from "./azure-devops/client";
 import type { AiProvider, ReviewContext } from "./ai/provider";
 import { SYSTEM_PROMPT } from "./ai/provider";
-import { AzureOpenAiProvider } from "./ai/azure-openai";
-import { OpenAiProvider } from "./ai/openai";
-import { AnthropicProvider } from "./ai/anthropic";
 import { VercelAiProvider } from "./ai/vercel-ai-provider";
 import type {
   Logger,
@@ -49,21 +46,8 @@ const defaultLogger: Logger = {
   error: (msg) => console.error(`[pr-reviewer] ${msg}`),
 };
 
-function createAiProvider(config: AiConfig, useVercelSdk = true): AiProvider {
-  // Default to Vercel AI SDK provider — supports tools and agentic review
-  if (useVercelSdk) {
-    return new VercelAiProvider(config);
-  }
-
-  // Fallback to direct API providers (no tool support)
-  switch (config.provider) {
-    case "azure-openai":
-      return new AzureOpenAiProvider(config);
-    case "openai":
-      return new OpenAiProvider(config);
-    case "anthropic":
-      return new AnthropicProvider(config);
-  }
+function createAiProvider(config: AiConfig): AiProvider {
+  return new VercelAiProvider(config);
 }
 
 export class PrReviewer {
@@ -282,8 +266,8 @@ export class PrReviewer {
   private async runAiReview(
     files: PrFileChange[],
     prTitle: string,
-    prDescription?: string,
-    reviewContext?: ReviewContext,
+    prDescription: string | undefined,
+    reviewContext: ReviewContext,
     projectContext?: string,
   ): Promise<ReviewResult> {
     const chunks = this.chunkFiles(files);

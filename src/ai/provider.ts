@@ -1,5 +1,5 @@
-import type { AzureDevOpsClient } from '../azure-devops/client';
-import type { Logger } from '../types';
+import type { AzureDevOpsClient } from "../azure-devops/client";
+import type { Logger } from "../types";
 
 /** Context passed to AI providers so tools can interact with the repo */
 export interface ReviewContext {
@@ -13,7 +13,11 @@ export interface ReviewContext {
 
 export interface AiProvider {
   /** Send a system + user prompt and return the raw response text */
-  review(systemPrompt: string, userPrompt: string, context?: ReviewContext): Promise<string>;
+  review(
+    systemPrompt: string,
+    userPrompt: string,
+    context: ReviewContext,
+  ): Promise<string>;
 }
 
 export const SYSTEM_PROMPT = `You are a senior code reviewer. Review the following code changes from a pull request.

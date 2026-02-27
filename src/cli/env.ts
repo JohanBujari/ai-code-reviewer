@@ -1,32 +1,151 @@
-import dotenv from 'dotenv';
-import type { AiConfig } from '../config';
-import type { WatchedRepo } from '../watcher/types';
+import dotenv from "dotenv";
+import type { AiConfig } from "../config";
+import type { WatchedRepo } from "../watcher/types";
+import { promptForMissingVars } from "./prompt";
 
-export interface WatcherEnvConfig {
+// ── Types ────────────────────────────────────────────────
+
+/** Base config shared by all commands (org + pat + ai) */
+export interface BaseEnvConfig {
   azureDevOps: {
     org: string;
     pat: string;
   };
   ai: AiConfig;
+}
+
+/** Extended config for the watch command (adds repos, polling, state) */
+export interface WatcherEnvConfig extends BaseEnvConfig {
   repos: WatchedRepo[];
   pollIntervalMs: number;
   stateFilePath: string;
 }
 
-export function loadEnvConfig(options: {
-  interval?: string;
-  stateFile?: string;
-}): WatcherEnvConfig {
+// ── Env Lookup Abstraction ───────────────────────────────
+
+type EnvLookup = (key: string) => string | undefined;
+
+function createEnvLookup(overrides: Record<string, string> = {}): EnvLookup {
+  return (key: string) => overrides[key] ?? process.env[key];
+}
+
+// ── Missing Variable Detection ───────────────────────────
+
+function getRequiredProviderKeys(provider: string): string[] {
+  switch (provider) {
+    case "openai":
+      return ["OPENAI_API_KEY"];
+    case "anthropic":
+      return ["ANTHROPIC_API_KEY"];
+    case "azure-openai":
+      return [
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_DEPLOYMENT",
+      ];
+    default:
+      return [];
+  }
+}
+
+function detectMissingVars(
+  command: "watch" | "review",
+  lookup: EnvLookup,
+): Set<string> {
+  const missing = new Set<string>();
+
+  for (const key of ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT", "AI_PROVIDER"]) {
+    if (!lookup(key)) missing.add(key);
+  }
+
+  // Provider-specific (only check if provider is already known)
+  const provider = lookup("AI_PROVIDER");
+  if (provider) {
+    for (const key of getRequiredProviderKeys(provider)) {
+      if (!lookup(key)) missing.add(key);
+    }
+  }
+
+  if (command === "watch" && !lookup("WATCH_REPOS")) {
+    missing.add("WATCH_REPOS");
+  }
+
+  return missing;
+}
+
+// ── Interactive Loader (async, prompts on missing vars) ──
+
+export async function loadEnvConfigInteractive(
+  options: { interval?: string; stateFile?: string },
+  command: "watch" | "review",
+): Promise<WatcherEnvConfig | BaseEnvConfig> {
   dotenv.config();
 
-  const org = requireEnv('AZURE_DEVOPS_ORG');
-  const pat = requireEnv('AZURE_DEVOPS_PAT');
-  const aiProvider = requireEnv('AI_PROVIDER') as 'openai' | 'anthropic' | 'azure-openai';
+  let lookup = createEnvLookup();
+  const missing = detectMissingVars(command, lookup);
 
-  // Parse WATCH_REPOS: "project/repoId/repoName,project2/repoId2/repoName2"
-  const reposRaw = requireEnv('WATCH_REPOS');
-  const repos: WatchedRepo[] = reposRaw.split(',').map((entry) => {
-    const parts = entry.trim().split('/');
+  if (missing.size > 0) {
+    if (!process.stdin.isTTY) {
+      const keys = [...missing].join(", ");
+      throw new Error(
+        `Missing required configuration: ${keys}. ` +
+          `Set them in .env or as environment variables.`,
+      );
+    }
+
+    // Prompt for all missing vars (phased: common -> provider -> watch)
+    const answers = await promptForMissingVars(missing, command);
+    lookup = createEnvLookup(answers);
+
+    // If AI_PROVIDER was just answered, check provider-specific keys
+    const provider = lookup("AI_PROVIDER");
+    if (provider) {
+      const providerMissing = getRequiredProviderKeys(provider).filter(
+        (k) => !lookup(k),
+      );
+      if (providerMissing.length > 0) {
+        const extra = await promptForMissingVars(
+          new Set(providerMissing),
+          command,
+        );
+        lookup = createEnvLookup({ ...answers, ...extra });
+      }
+    }
+  }
+
+  return buildConfig(lookup, options, command);
+}
+
+// ── Config Builder ───────────────────────────────────────
+
+function buildConfig(
+  lookup: EnvLookup,
+  options: { interval?: string; stateFile?: string },
+  command: "watch" | "review",
+): WatcherEnvConfig | BaseEnvConfig {
+  const require = (key: string): string => {
+    const val = lookup(key);
+    if (!val) throw new Error(`Missing required configuration: ${key}`);
+    return val;
+  };
+
+  const org = require("AZURE_DEVOPS_ORG");
+  const pat = require("AZURE_DEVOPS_PAT");
+  const provider = require("AI_PROVIDER") as
+    | "openai"
+    | "anthropic"
+    | "azure-openai";
+  const ai = buildAiConfig(provider, lookup, require);
+
+  const base: BaseEnvConfig = { azureDevOps: { org, pat }, ai };
+
+  if (command === "review") {
+    return base;
+  }
+
+  const reposRaw = require("WATCH_REPOS");
+  const repos: WatchedRepo[] = reposRaw.split(",").map((entry) => {
+    const parts = entry.trim().split("/");
     if (parts.length < 2) {
       throw new Error(
         `Invalid WATCH_REPOS entry: "${entry}". Expected format: "project/repoId/repoName"`,
@@ -40,47 +159,53 @@ export function loadEnvConfig(options: {
   });
 
   return {
-    azureDevOps: { org, pat },
-    ai: buildAiConfig(aiProvider),
+    ...base,
     repos,
-    pollIntervalMs: parseInt(options.interval ?? '30', 10) * 1000,
-    stateFilePath: options.stateFile ?? './pr-agent-state.json',
+    pollIntervalMs: parseInt(options.interval ?? "30", 10) * 1000,
+    stateFilePath: options.stateFile ?? "./pr-agent-state.json",
   };
 }
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
-}
-
-function buildAiConfig(provider: string): AiConfig {
+function buildAiConfig(
+  provider: string,
+  lookup: EnvLookup,
+  require: (key: string) => string,
+): AiConfig {
   switch (provider) {
-    case 'openai':
+    case "openai":
       return {
-        provider: 'openai',
-        apiKey: requireEnv('OPENAI_API_KEY'),
-        model: process.env['OPENAI_MODEL'],
+        provider: "openai",
+        apiKey: require("OPENAI_API_KEY"),
+        model: lookup("OPENAI_MODEL"),
       };
-    case 'anthropic':
+    case "anthropic":
       return {
-        provider: 'anthropic',
-        apiKey: requireEnv('ANTHROPIC_API_KEY'),
-        model: process.env['ANTHROPIC_MODEL'],
+        provider: "anthropic",
+        apiKey: require("ANTHROPIC_API_KEY"),
+        model: lookup("ANTHROPIC_MODEL"),
       };
-    case 'azure-openai':
+    case "azure-openai":
       return {
-        provider: 'azure-openai',
-        endpoint: requireEnv('AZURE_OPENAI_ENDPOINT'),
-        apiKey: requireEnv('AZURE_OPENAI_API_KEY'),
-        deployment: requireEnv('AZURE_OPENAI_DEPLOYMENT'),
-        apiVersion: process.env['AZURE_OPENAI_API_VERSION'],
+        provider: "azure-openai",
+        endpoint: require("AZURE_OPENAI_ENDPOINT"),
+        apiKey: require("AZURE_OPENAI_API_KEY"),
+        deployment: require("AZURE_OPENAI_DEPLOYMENT"),
+        apiVersion: lookup("AZURE_OPENAI_API_VERSION"),
       };
     default:
       throw new Error(
         `Unsupported AI_PROVIDER: "${provider}". Must be one of: openai, anthropic, azure-openai`,
       );
   }
+}
+
+// ── Backward-compat sync loader ──────────────────────────
+
+export function loadEnvConfig(options: {
+  interval?: string;
+  stateFile?: string;
+}): WatcherEnvConfig {
+  dotenv.config();
+  const lookup = createEnvLookup();
+  return buildConfig(lookup, options, "watch") as WatcherEnvConfig;
 }
