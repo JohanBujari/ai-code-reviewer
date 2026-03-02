@@ -40,10 +40,9 @@ export function createReviewTools(ctx: ReviewContext) {
       parameters: z.object({
         scopePath: z
           .string()
-          .default('/')
-          .describe('Root path to scan from (default "/")'),
+          .describe('Root path to scan from, use "/" for the repo root'),
       }),
-      execute: async ({ scopePath }) => {
+      execute: async ({ scopePath = '/' }) => {
         ctx.logger.info(`[tool] get_project_structure: scanning ${scopePath}`);
 
         // 1. Get the directory tree
@@ -169,11 +168,10 @@ export function createReviewTools(ctx: ReviewContext) {
           .describe('Absolute path to the file in the repo, e.g. /src/index.ts'),
         top: z
           .number()
-          .default(5)
-          .describe('Number of recent commits to return (default 5, max 10)'),
+          .describe('Number of recent commits to return (max 10)'),
       }),
-      execute: async ({ filePath, top }) => {
-        const limit = Math.min(top ?? 5, 10);
+      execute: async ({ filePath, top = 5 }) => {
+        const limit = Math.min(top, 10);
         ctx.logger.info(`[tool] get_file_history: ${filePath} (last ${limit})`);
         const commits = await ctx.devOps.getFileCommits(
           ctx.project,
