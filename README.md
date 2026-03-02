@@ -150,6 +150,7 @@ const reviewer = createPrReviewer({
   ai: {
     provider: "anthropic",
     apiKey: process.env.ANTHROPIC_API_KEY!,
+
     model: "claude-sonnet-4-5", // optional, this is the default
   },
 });
