@@ -55,15 +55,52 @@ export class VercelAiProvider implements AiProvider {
       },
     });
 
-    // Extract JSON from markdown fences if wrapped
+    return extractJson(text);
+  }
+}
+
+/**
+ * Robustly extract the JSON payload from an AI response that may contain
+ * markdown fences, prose preamble, or other surrounding text.
+ */
+function extractJson(text: string): string {
+  const trimmed = text.trim();
+
+  // 1. Already valid JSON
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    /* fall through */
+  }
+
+  // 2. Markdown code fence: ```json ... ``` or ``` ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    const candidate = fenceMatch[1].trim();
     try {
-      JSON.parse(text);
-      return text;
+      JSON.parse(candidate);
+      return candidate;
     } catch {
-      const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-      return jsonMatch ? jsonMatch[1].trim() : text;
+      /* fall through */
     }
   }
+
+  // 3. Find the first { ... } block spanning the whole JSON object
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    const candidate = trimmed.slice(start, end + 1);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // 4. Nothing worked — return as-is and let the caller handle the error
+  return text;
 }
 
 function extractResourceName(endpoint: string): string {

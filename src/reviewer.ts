@@ -383,7 +383,9 @@ export class PrReviewer {
     lines.push("");
 
     for (const file of files) {
-      lines.push(`- **${file.changeType.toUpperCase()}**: \`${file.filePath}\``);
+      lines.push(
+        `- **${file.changeType.toUpperCase()}**: \`${file.filePath}\``,
+      );
     }
 
     return lines.join("\n");
@@ -398,10 +400,10 @@ export class PrReviewer {
         comments: Array.isArray(parsed.comments) ? parsed.comments : [],
       };
     } catch {
-      this.logger.warn("Failed to parse AI response as JSON");
-      return {
-        comments: [],
-      };
+      this.logger.warn(
+        `Failed to parse AI response as JSON. Response started with: ${responseText.slice(0, 120).replace(/\n/g, " ")}`,
+      );
+      return { comments: [] };
     }
   }
 
@@ -524,7 +526,6 @@ export class PrReviewer {
       );
     }
   }
-
 
   private async postErrorComment(
     project: string,

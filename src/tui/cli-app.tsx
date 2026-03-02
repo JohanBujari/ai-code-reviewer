@@ -199,7 +199,7 @@ const MENU_ITEMS: SelectItem[] = [
     label: "Review a PR",
     value: "review",
     icon: "\u2691",
-    description: "Review a single pull request",
+    description: "Paste an Azure DevOps PR URL",
   },
   { label: "Exit", value: "exit", icon: "\u2715", description: "" },
 ];
