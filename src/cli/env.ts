@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import type { AiConfig } from "../config";
 import type { WatchedRepo } from "../watcher/types";
 import { promptForMissingVars } from "./prompt";
+import { getDefaultStatePath } from "./config-store";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ function buildConfig(
     ...base,
     repos,
     pollIntervalMs: parseInt(options.interval ?? "30", 10) * 1000,
-    stateFilePath: options.stateFile ?? "./pr-agent-state.json",
+    stateFilePath: options.stateFile ?? getDefaultStatePath(),
   };
 }
 
