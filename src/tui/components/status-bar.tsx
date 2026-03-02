@@ -8,7 +8,10 @@ interface StatusBarProps {
 function KeyBadge({ keyChar, label }: { keyChar: string; label: string }) {
   return (
     <Box gap={0}>
-      <Text color="#00d4ff" bold> {keyChar} </Text>
+      <Text color="#00d4ff" bold>
+        {" "}
+        {keyChar}{" "}
+      </Text>
       <Text color="#888888">{label}</Text>
     </Box>
   );
@@ -27,15 +30,21 @@ export function StatusBar({ errors }: StatusBarProps) {
     >
       <Box gap={2}>
         <KeyBadge keyChar="q" label="quit" />
-        <Text color="#333333">{'\u2502'}</Text>
+        <Text color="#333333">{"\u2502"}</Text>
         <KeyBadge keyChar="p" label="pause/resume" />
-        <Text color="#333333">{'\u2502'}</Text>
+        <Text color="#333333">{"\u2502"}</Text>
         <KeyBadge keyChar="r" label="refresh" />
+        <Text color="#333333">{"\u2502"}</Text>
+        <KeyBadge keyChar="c" label="clear credentials" />
       </Box>
       {lastError && (
         <Box marginTop={1}>
-          <Text color="red" bold>{'\u2717'} </Text>
-          <Text color="red" wrap="wrap">{lastError.message}</Text>
+          <Text color="red" bold>
+            {"\u2717"}{" "}
+          </Text>
+          <Text color="red" wrap="wrap">
+            {lastError.message}
+          </Text>
         </Box>
       )}
     </Box>

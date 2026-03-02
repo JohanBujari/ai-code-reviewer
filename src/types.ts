@@ -53,7 +53,6 @@ export interface ReviewComment {
 
 /** Complete AI review result */
 export interface ReviewResult {
-  summary: string;
   comments: ReviewComment[];
 }
 

@@ -43,8 +43,6 @@ export async function reviewCommand(url: string): Promise<void> {
   try {
     console.log(`Reviewing PR #${prId} in ${project}/${repoSlug}...`);
     const result = await reviewer.reviewPullRequest(project, repoSlug, prId);
-    console.log("\n--- Review Summary ---");
-    console.log(result.summary);
     console.log(`\nComments posted: ${result.comments.length}`);
     for (const comment of result.comments) {
       const severity = comment.severity.toUpperCase().padEnd(10);

@@ -50,11 +50,10 @@ Rules:
 - ONLY comment on lines that were changed or added in this PR. Never comment on unchanged existing code.
 - Only comment on actual issues or meaningful improvements. Do NOT nitpick formatting or style.
 - Be concise. Each comment should be 1-3 sentences.
-- If the code looks good, say so in the summary and return an empty comments array.
+- You do NOT have to leave comments. If the code is clean and correct, return an empty comments array. Most PRs are fine — only flag real issues.
 
 Respond with ONLY valid JSON in this exact format:
 {
-  "summary": "Brief overall assessment of the PR (2-4 sentences)",
   "comments": [
     {
       "filePath": "/path/to/file.ts",

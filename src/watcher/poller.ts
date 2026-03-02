@@ -1,7 +1,7 @@
-import { AzureDevOpsClient } from '../azure-devops/client';
-import type { Logger } from '../types';
-import type { StateManager } from './state';
-import type { WatchedRepo, ReviewJob, WatcherEvent } from './types';
+import { AzureDevOpsClient } from "../azure-devops/client";
+import type { Logger } from "../types";
+import type { StateManager } from "./state";
+import type { WatchedRepo, ReviewJob, WatcherEvent } from "./types";
 
 export class Poller {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -48,14 +48,17 @@ export class Poller {
   private async pollOnce(): Promise<void> {
     if (this.polling || this.paused) return;
     this.polling = true;
-    this.onEvent({ type: 'poll-start', repos: this.repos });
+    this.onEvent({ type: "poll-start", repos: this.repos });
 
     let totalNewJobs = 0;
 
     try {
       for (const repo of this.repos) {
         try {
-          const prs = await this.devOps.listActivePullRequests(repo.project, repo.repoId);
+          const prs = await this.devOps.listActivePullRequests(
+            repo.project,
+            repo.repoId,
+          );
 
           for (const pr of prs) {
             try {
@@ -67,7 +70,14 @@ export class Poller {
               if (iterations.length === 0) continue;
 
               const latest = iterations[iterations.length - 1];
-              if (this.stateManager.hasBeenReviewed(repo.project, repo.repoId, pr.pullRequestId, latest.id)) {
+              if (
+                this.stateManager.hasBeenReviewed(
+                  repo.project,
+                  repo.repoId,
+                  pr.pullRequestId,
+                  latest.id,
+                )
+              ) {
                 continue;
               }
 
@@ -78,11 +88,11 @@ export class Poller {
                 prTitle: pr.title,
                 prDescription: pr.description,
                 iterationId: latest.id,
-                status: 'queued',
+                status: "queued",
                 queuedAt: Date.now(),
               };
               totalNewJobs++;
-              this.onEvent({ type: 'review-queued', job });
+              this.onEvent({ type: "review-queued", job });
             } catch (error) {
               this.logger.warn(
                 `Failed to check iterations for PR #${pr.pullRequestId} in ${repo.project}/${repo.repoName}: ${error}`,
@@ -90,14 +100,22 @@ export class Poller {
             }
           }
         } catch (error) {
-          this.logger.error(`Poll error for ${repo.project}/${repo.repoName}: ${error}`);
+          const msg = String(error);
+          const hint =
+            msg.includes("non-JSON response") ||
+            msg.includes("is not valid JSON")
+              ? " — check that your Azure DevOps PAT is still valid"
+              : "";
+          this.logger.error(
+            `Poll error for ${repo.project}/${repo.repoName}: ${msg}${hint}`,
+          );
         }
       }
 
       this.stateManager.updateLastPollAt();
-      this.onEvent({ type: 'poll-complete', newJobs: totalNewJobs });
+      this.onEvent({ type: "poll-complete", newJobs: totalNewJobs });
     } catch (error) {
-      this.onEvent({ type: 'poll-error', error: String(error) });
+      this.onEvent({ type: "poll-error", error: String(error) });
     } finally {
       this.polling = false;
     }

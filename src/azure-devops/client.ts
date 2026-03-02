@@ -1,4 +1,4 @@
-import { DEFAULTS } from '../config';
+import { DEFAULTS } from "../config";
 import type {
   Logger,
   PrIteration,
@@ -6,7 +6,7 @@ import type {
   PrStatusState,
   PullRequestSummary,
   ThreadContext,
-} from '../types';
+} from "../types";
 
 interface DevOpsListResponse<T> {
   value: T[];
@@ -31,18 +31,17 @@ export class AzureDevOpsClient {
     top = 20,
   ): Promise<PullRequestSummary[]> {
     const params = new URLSearchParams({
-      'searchCriteria.status': 'active',
-      '$top': String(top),
-      'api-version': this.apiVersion,
+      "searchCriteria.status": "active",
+      $top: String(top),
+      "api-version": this.apiVersion,
     });
-    const baseUrl = this.buildUrl(project, repoId, 'pullrequests');
+    const baseUrl = this.buildUrl(project, repoId, "pullrequests");
     const response = await fetch(`${baseUrl}?${params}`, {
       headers: { Authorization: this.authHeader },
     });
-    if (!response.ok) {
-      throw new Error(`Azure DevOps API error: ${response.status} ${response.statusText}`);
-    }
-    const data = (await response.json()) as DevOpsListResponse<PullRequestSummary>;
+    this.ensureJsonResponse(response);
+    const data =
+      (await response.json()) as DevOpsListResponse<PullRequestSummary>;
     return data.value;
   }
 
@@ -51,7 +50,11 @@ export class AzureDevOpsClient {
     repoId: string,
     prId: number,
   ): Promise<PrIteration[]> {
-    const url = this.buildUrl(project, repoId, `pullrequests/${prId}/iterations`);
+    const url = this.buildUrl(
+      project,
+      repoId,
+      `pullrequests/${prId}/iterations`,
+    );
     const response = await this.get<DevOpsListResponse<PrIteration>>(url);
     return response.value;
   }
@@ -67,7 +70,9 @@ export class AzureDevOpsClient {
       repoId,
       `pullrequests/${prId}/iterations/${iterationId}/changes`,
     );
-    const response = await this.get<{ changeEntries: PrIterationChange[] }>(url);
+    const response = await this.get<{ changeEntries: PrIterationChange[] }>(
+      url,
+    );
     return response.changeEntries ?? [];
   }
 
@@ -79,22 +84,24 @@ export class AzureDevOpsClient {
   ): Promise<string> {
     const params = new URLSearchParams({
       path,
-      'versionDescriptor.version': commitId,
-      'versionDescriptor.versionType': 'commit',
-      'api-version': this.apiVersion,
-      '$format': 'text',
+      "versionDescriptor.version": commitId,
+      "versionDescriptor.versionType": "commit",
+      "api-version": this.apiVersion,
+      $format: "text",
     });
-    const url = `${this.buildUrl(project, repoId, 'items')}?${params}`;
+    const url = `${this.buildUrl(project, repoId, "items")}?${params}`;
 
     try {
       const response = await fetch(url, {
         headers: { Authorization: this.authHeader },
       });
-      if (!response.ok) return '';
+      if (!response.ok) return "";
       return await response.text();
     } catch (error) {
-      this.logger.warn(`Failed to fetch file content for ${path}@${commitId}: ${error}`);
-      return '';
+      this.logger.warn(
+        `Failed to fetch file content for ${path}@${commitId}: ${error}`,
+      );
+      return "";
     }
   }
 
@@ -134,11 +141,18 @@ export class AzureDevOpsClient {
     project: string,
     repoId: string,
     prId: number,
-  ): Promise<Array<{ id: number; status: string; comments: Array<{ content: string }> }>> {
+  ): Promise<
+    Array<{ id: number; status: string; comments: Array<{ content: string }> }>
+  > {
     const url = this.buildUrl(project, repoId, `pullrequests/${prId}/threads`);
-    const response = await this.get<
-      DevOpsListResponse<{ id: number; status: string; comments: Array<{ content: string }> }>
-    >(url);
+    const response =
+      await this.get<
+        DevOpsListResponse<{
+          id: number;
+          status: string;
+          comments: Array<{ content: string }>;
+        }>
+      >(url);
     return response.value;
   }
 
@@ -147,13 +161,20 @@ export class AzureDevOpsClient {
     repoId: string,
     filePath: string,
     top = 5,
-  ): Promise<Array<{ commitId: string; comment: string; author: { name: string }; committer: { date: string } }>> {
+  ): Promise<
+    Array<{
+      commitId: string;
+      comment: string;
+      author: { name: string };
+      committer: { date: string };
+    }>
+  > {
     const params = new URLSearchParams({
-      'searchCriteria.itemPath': filePath,
-      '$top': String(top),
-      'api-version': this.apiVersion,
+      "searchCriteria.itemPath": filePath,
+      $top: String(top),
+      "api-version": this.apiVersion,
     });
-    const baseUrl = this.buildUrl(project, repoId, 'commits');
+    const baseUrl = this.buildUrl(project, repoId, "commits");
     const response = await fetch(`${baseUrl}?${params}`, {
       headers: { Authorization: this.authHeader },
     });
@@ -171,16 +192,16 @@ export class AzureDevOpsClient {
     project: string,
     repoId: string,
     commitId: string,
-    scopePath = '/',
+    scopePath = "/",
   ): Promise<Array<{ path: string; isFolder: boolean }>> {
     const params = new URLSearchParams({
       scopePath,
-      recursionLevel: 'Full',
-      'versionDescriptor.version': commitId,
-      'versionDescriptor.versionType': 'commit',
-      'api-version': this.apiVersion,
+      recursionLevel: "Full",
+      "versionDescriptor.version": commitId,
+      "versionDescriptor.versionType": "commit",
+      "api-version": this.apiVersion,
     });
-    const url = `${this.buildUrl(project, repoId, 'items')}?${params}`;
+    const url = `${this.buildUrl(project, repoId, "items")}?${params}`;
     try {
       const response = await fetch(url, {
         headers: { Authorization: this.authHeader },
@@ -207,7 +228,7 @@ export class AzureDevOpsClient {
     await this.post(url, {
       state,
       description,
-      context: { name: 'ai-code-review', genre: 'pr-review' },
+      context: { name: "ai-code-review", genre: "pr-review" },
     });
   }
 
@@ -215,29 +236,49 @@ export class AzureDevOpsClient {
     return `https://dev.azure.com/${this.org}/${project}/_apis/git/repositories/${repoId}/${path}`;
   }
 
-  private async get<T>(url: string): Promise<T> {
-    const separator = url.includes('?') ? '&' : '?';
-    const response = await fetch(`${url}${separator}api-version=${this.apiVersion}`, {
-      headers: { Authorization: this.authHeader },
-    });
+  private ensureJsonResponse(response: Response): void {
     if (!response.ok) {
-      throw new Error(`Azure DevOps API error: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Azure DevOps API error: ${response.status} ${response.statusText}`,
+      );
     }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `Azure DevOps returned non-JSON response (content-type: ${contentType}). ` +
+          `This usually means the PAT is expired or invalid. ` +
+          `Please update your Personal Access Token.`,
+      );
+    }
+  }
+
+  private async get<T>(url: string): Promise<T> {
+    const separator = url.includes("?") ? "&" : "?";
+    const response = await fetch(
+      `${url}${separator}api-version=${this.apiVersion}`,
+      {
+        headers: { Authorization: this.authHeader },
+      },
+    );
+    this.ensureJsonResponse(response);
     return response.json() as Promise<T>;
   }
 
   private async post(url: string, body: unknown): Promise<void> {
-    const separator = url.includes('?') ? '&' : '?';
-    const response = await fetch(`${url}${separator}api-version=${this.apiVersion}`, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader,
-        'Content-Type': 'application/json',
+    const separator = url.includes("?") ? "&" : "?";
+    const response = await fetch(
+      `${url}${separator}api-version=${this.apiVersion}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+    );
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
+      const text = await response.text().catch(() => "");
       throw new Error(`Azure DevOps API error: ${response.status} ${text}`);
     }
   }

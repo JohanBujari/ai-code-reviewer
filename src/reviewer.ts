@@ -126,14 +126,14 @@ export class PrReviewer {
     const iterations = await this.devOps.getPrIterations(project, repoId, prId);
     if (iterations.length === 0) {
       this.logger.warn(`No iterations found for PR #${prId}`);
-      return { summary: "No iterations found.", comments: [] };
+      return { comments: [] };
     }
 
     const latestIteration = iterations[iterations.length - 1];
     const dedupKey = `${prId}-${latestIteration.id}`;
     if (this.isDuplicate(dedupKey)) {
       this.logger.info(`Skipping duplicate review for ${dedupKey}`);
-      return { summary: "Duplicate review skipped.", comments: [] };
+      return { comments: [] };
     }
 
     try {
@@ -154,7 +154,6 @@ export class PrReviewer {
 
       const reviewableChanges = this.filterReviewableChanges(changes);
       const cappedChanges = reviewableChanges.slice(0, this.maxFiles);
-      const skippedCount = reviewableChanges.length - cappedChanges.length;
 
       const fileChanges = await this.fetchFileDiffs(
         project,
@@ -173,7 +172,7 @@ export class PrReviewer {
           "succeeded",
           "AI review: No reviewable changes found.",
         );
-        return { summary: "No reviewable changes found.", comments: [] };
+        return { comments: [] };
       }
 
       // Build context so the AI can use tools to explore the repo
@@ -205,19 +204,6 @@ export class PrReviewer {
       for (const comment of reviewResult.comments) {
         await this.postInlineComment(project, repoId, prId, comment);
       }
-
-      const summaryMarkdown = this.buildSummaryComment(
-        reviewResult.summary,
-        reviewResult.comments,
-        fileChanges.length,
-        skippedCount,
-      );
-      await this.devOps.createGeneralComment(
-        project,
-        repoId,
-        prId,
-        summaryMarkdown,
-      );
 
       const hasCritical = reviewResult.comments.some(
         (c) => c.severity === "critical",
@@ -254,7 +240,6 @@ export class PrReviewer {
         );
 
       return {
-        summary: "AI review encountered an error.",
         comments: [],
       };
     }
@@ -271,7 +256,6 @@ export class PrReviewer {
   ): Promise<ReviewResult> {
     const chunks = this.chunkFiles(files);
     const allComments: ReviewComment[] = [];
-    const summaries: string[] = [];
 
     for (const chunk of chunks) {
       const userPrompt = this.buildUserPrompt(
@@ -287,17 +271,9 @@ export class PrReviewer {
       );
       const result = this.parseReviewResponse(responseText);
       allComments.push(...result.comments);
-      summaries.push(result.summary);
     }
 
-    const combinedSummary =
-      summaries.length === 1
-        ? summaries[0]
-        : `Review across ${chunks.length} chunks:\n\n${summaries
-            .map((s, i) => `**Part ${i + 1}:** ${s}`)
-            .join("\n\n")}`;
-
-    return { summary: combinedSummary, comments: allComments };
+    return { comments: allComments };
   }
 
   /**
@@ -416,17 +392,14 @@ export class PrReviewer {
   private parseReviewResponse(responseText: string): ReviewResult {
     try {
       const parsed = JSON.parse(responseText) as {
-        summary?: string;
         comments?: ReviewComment[];
       };
       return {
-        summary: parsed.summary ?? "No summary provided.",
         comments: Array.isArray(parsed.comments) ? parsed.comments : [],
       };
     } catch {
       this.logger.warn("Failed to parse AI response as JSON");
       return {
-        summary: responseText.slice(0, 2000),
         comments: [],
       };
     }
@@ -552,52 +525,6 @@ export class PrReviewer {
     }
   }
 
-  private buildSummaryComment(
-    summary: string,
-    comments: ReviewComment[],
-    filesReviewed: number,
-    skippedCount: number,
-  ): string {
-    const providerName = this.options.ai.provider;
-    const lines = [
-      "## 🤖 AI Code Review Summary",
-      "",
-      summary,
-      "",
-      `**Files reviewed:** ${filesReviewed}`,
-    ];
-
-    if (skippedCount > 0) {
-      lines.push(
-        `**Files skipped (over limit):** ${skippedCount} (max ${this.maxFiles})`,
-      );
-    }
-
-    if (comments.length > 0) {
-      const bySeverity = comments.reduce(
-        (acc, c) => {
-          acc[c.severity] = (acc[c.severity] ?? 0) + 1;
-          return acc;
-        },
-        {} as Record<string, number>,
-      );
-
-      lines.push("", "**Issues found:**");
-      for (const [severity, count] of Object.entries(bySeverity)) {
-        const emoji = SEVERITY_EMOJI[severity] ?? "⚪";
-        lines.push(`- ${emoji} ${severity}: ${count}`);
-      }
-    } else {
-      lines.push("", "✅ No issues found. Code looks good!");
-    }
-
-    lines.push(
-      "",
-      "---",
-      `*Powered by ${providerName} • azure-devops-pr-reviewer*`,
-    );
-    return lines.join("\n");
-  }
 
   private async postErrorComment(
     project: string,

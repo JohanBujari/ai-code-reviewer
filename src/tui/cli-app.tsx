@@ -9,6 +9,7 @@ import { TuiStore } from './store';
 import { WatcherOrchestrator } from '../watcher/orchestrator';
 import { startTui } from './app';
 import { PrReviewer } from '../reviewer';
+import { loadSavedConfig, mergeAndSaveConfig } from '../cli/config-store';
 import type { BaseEnvConfig, WatcherEnvConfig } from '../cli/env';
 import type { AiConfig } from '../config';
 import type { WatchedRepo } from '../watcher/types';
@@ -46,8 +47,8 @@ const WATCH_VARS: VarDef[] = [
 
 // ── Config helpers ──
 
-function detectMissingVars(command: 'watch' | 'review', answers: Record<string, string>): VarDef[] {
-  const lookup = (key: string) => answers[key] ?? process.env[key];
+function detectMissingVars(command: 'watch' | 'review', answers: Record<string, string>, saved: Record<string, string | undefined> = {}): VarDef[] {
+  const lookup = (key: string) => answers[key] ?? saved[key] ?? process.env[key];
   const missing: VarDef[] = [];
   for (const def of COMMON_VARS) { if (!lookup(def.key)) missing.push(def); }
   const provider = lookup('AI_PROVIDER');
@@ -171,20 +172,27 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
 
   const startConfig = useCallback((cmd: 'watch' | 'review') => {
     dotenv.config();
-    const missing = detectMissingVars(cmd, {});
+    const saved = loadSavedConfig();
+    // Pre-populate answers from saved config
+    const preAnswers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(saved)) {
+      if (value) preAnswers[key] = value;
+    }
+    const missing = detectMissingVars(cmd, preAnswers, saved);
     if (missing.length === 0) {
-      // Config already complete, skip straight to action
-      finishConfig(cmd, {});
+      finishConfig(cmd, preAnswers);
       return;
     }
     setCommand(cmd);
     setMissingVars(missing);
     setConfigIndex(0);
-    setConfigAnswers({});
+    setConfigAnswers(preAnswers);
     setPhase('config');
   }, []);
 
   const finishConfig = useCallback((cmd: 'watch' | 'review', answers: Record<string, string>) => {
+    // Save credentials for next time
+    mergeAndSaveConfig(answers);
     for (const [key, value] of Object.entries(answers)) {
       process.env[key] = value;
     }
@@ -429,8 +437,8 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {/* Phase: Review complete */}
       {phase === 'review-done' && reviewResult && (
         <Box flexDirection="column" paddingX={1}>
-          {/* Summary box */}
-          <Box borderStyle="round" borderColor="#00d4ff" paddingX={1} flexDirection="column">
+          {/* Header */}
+          <Box borderStyle="round" borderColor="#00d4ff" paddingX={1}>
             <Box gap={1}>
               <Text color="#00d4ff" bold>{'\u2713'} Review Complete</Text>
               {prInfo && (
@@ -438,9 +446,6 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
                   {'\u2502'} PR #{prInfo.prId} in {prInfo.project}/{prInfo.repo}
                 </Text>
               )}
-            </Box>
-            <Box marginTop={1}>
-              <Text wrap="wrap" color="#cccccc">{reviewResult.summary}</Text>
             </Box>
           </Box>
 
