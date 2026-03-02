@@ -22,15 +22,18 @@ function App({ store, orchestrator }: AppProps) {
 
   // Exit on fatal errors (invalid PAT, auth failures, etc.)
   useEffect(() => {
-    const onFatal = () => {
-      setTimeout(() => {
-        exit();
-        process.exit(1);
-      }, 2000);
+    const handler = (event: { type: string }) => {
+      if (event.type === "fatal-error") {
+        setTimeout(() => {
+          exit();
+          process.exit(1);
+        }, 2000);
+      }
     };
-    orchestrator.on("event", (event: { type: string }) => {
-      if (event.type === "fatal-error") onFatal();
-    });
+    orchestrator.on("event", handler);
+    return () => {
+      orchestrator.off("event", handler);
+    };
   }, [orchestrator, exit]);
 
   useInput((input) => {

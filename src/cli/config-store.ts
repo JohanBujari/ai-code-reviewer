@@ -84,7 +84,7 @@ function migrateV1toV2(v1: SavedConfig): ConfigFileV2 {
 function loadConfigFile(): ConfigFileV2 {
   try {
     if (!existsSync(CONFIG_FILE)) {
-      return { version: 2, activeProfile: "default", global: {}, profiles: {} };
+      return { version: 2, activeProfile: "default", global: {}, profiles: { default: {} } };
     }
     const raw = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
     if (raw.version === 2) return raw as ConfigFileV2;
@@ -94,7 +94,7 @@ function loadConfigFile(): ConfigFileV2 {
     saveConfigFile(v2);
     return v2;
   } catch {
-    return { version: 2, activeProfile: "default", global: {}, profiles: {} };
+    return { version: 2, activeProfile: "default", global: {}, profiles: { default: {} } };
   }
 }
 
@@ -119,25 +119,22 @@ export function loadSavedConfig(profileName?: string): SavedConfig {
   return { ...config.global, ...profile };
 }
 
-/** Save flat config directly (kept for backward compat — prefers mergeAndSaveConfig) */
+/** Save flat config directly (kept for backward compat — prefers mergeAndSaveConfig).
+ *  All keys go to the active profile; profile overrides global when loading. */
 export function saveConfig(config: SavedConfig): void {
-  // Route keys to global vs active profile
   const file = loadConfigFile();
   const name = file.activeProfile ?? "default";
   if (!file.profiles[name]) file.profiles[name] = {};
 
   for (const [key, value] of Object.entries(config)) {
     if (value === undefined) continue;
-    if (GLOBAL_KEYS.has(key)) {
-      file.global[key] = value;
-    } else {
-      file.profiles[name]![key] = value;
-    }
+    file.profiles[name]![key] = value;
   }
   saveConfigFile(file);
 }
 
-/** Merge new answers into the specified profile (or active profile) and persist */
+/** Merge new answers into the specified profile (or active profile) and persist.
+ *  Keys can be stored in both global and profile; profile overrides global when loading. */
 export function mergeAndSaveConfig(
   answers: Record<string, string>,
   profileName?: string,
@@ -147,11 +144,7 @@ export function mergeAndSaveConfig(
   if (!config.profiles[name]) config.profiles[name] = {};
 
   for (const [key, value] of Object.entries(answers)) {
-    if (GLOBAL_KEYS.has(key)) {
-      config.global[key] = value;
-    } else {
-      config.profiles[name]![key] = value;
-    }
+    config.profiles[name]![key] = value;
   }
 
   saveConfigFile(config);

@@ -442,7 +442,12 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
         const lookup = (key: string) => updated[key] ?? process.env[key];
         const newMissing = providerVars.filter((def) => !lookup(def.key));
         if (newMissing.length > 0) {
-          const updatedVars = [...missingVars, ...newMissing];
+          // Insert provider vars (e.g. API key) after AI_PROVIDER, before WATCH_REPOS
+          const updatedVars = [
+            ...missingVars.slice(0, nextIndex),
+            ...newMissing,
+            ...missingVars.slice(nextIndex),
+          ];
           setMissingVars(updatedVars);
           setConfigIndex(nextIndex);
           return;

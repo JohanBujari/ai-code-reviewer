@@ -28,12 +28,12 @@ Alternatively, you can use a `.env` file or environment variables:
 AZURE_DEVOPS_ORG=your-org
 AZURE_DEVOPS_PAT=your-personal-access-token
 
-# Repositories to watch (comma-separated: project/repoId/displayName)
-WATCH_REPOS=MyProject/my-repo/my-repo
-
 # AI Provider: openai | anthropic | azure-openai
 AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
+
+# Repositories to watch (comma-separated: project/repoId/displayName)
+WATCH_REPOS=MyProject/my-repo/my-repo
 ```
 
 ### Finding your repo details
@@ -90,7 +90,7 @@ node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pul
 
 ### Configuration Profiles
 
-Axiom supports named profiles for managing multiple Azure DevOps organizations or different configurations. Each profile stores its own org, PAT, and watched repos, while AI provider settings are shared globally by default.
+Axiom supports named profiles for managing multiple Azure DevOps organizations or different configurations. Each profile stores its own org, PAT, and watched repos. AI provider and API keys can be stored in both global (shared defaults) and profiles; profile values override global when set.
 
 ```bash
 # Profile management
@@ -131,7 +131,7 @@ On first run, the TUI prompts you to name your profile. On subsequent runs, you'
 }
 ```
 
-AI keys live in `global` (shared across profiles). Any key can be overridden per-profile — for example, `client-x` above uses OpenAI instead of the global Anthropic default. Environment variables and `.env` always take highest priority.
+Keys can live in `global` (shared defaults) or in profiles (profile-specific). Profile values override global when both are set — for example, `client-x` above uses OpenAI instead of the global Anthropic default. Environment variables and `.env` always take highest priority.
 
 ### TUI Keyboard Shortcuts
 
@@ -155,8 +155,7 @@ The terminal UI shows:
 
 ### State Persistence
 
-The watcher saves state to `~/.axiom/pr-agent-state.json` (configurable via `--state-file`) to:
-
+The watcher saves state to `~/.axiom/pr-agent-state.json` by default (configurable via `--state-file`) to:
 - Avoid re-reviewing PRs after restart
 - Track which iteration was last reviewed
 - Auto-cleanup entries older than 7 days

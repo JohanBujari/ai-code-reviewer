@@ -1,9 +1,13 @@
 import dotenv from "dotenv";
+import { homedir } from "os";
+import { join } from "path";
 import type { AiConfig } from "../config";
 import type { WatchedRepo } from "../watcher/types";
-import { loadSavedConfig, profileExists } from "./config-store";
+import { loadSavedConfig, profileExists, createProfile, setActiveProfile } from "./config-store";
 import { promptForMissingVars } from "./prompt";
 import { getDefaultStatePath } from "./config-store";
+
+export const DEFAULT_STATE_FILE = join(homedir(), ".axiom", "pr-agent-state.json");
 
 // ── Types ────────────────────────────────────────────────
 
@@ -84,9 +88,8 @@ export async function loadEnvConfigInteractive(
   dotenv.config();
 
   if (options.profile && !profileExists(options.profile)) {
-    throw new Error(
-      `Profile "${options.profile}" does not exist yet. Create it with: axiom profile add ${options.profile}`,
-    );
+    createProfile(options.profile);
+    setActiveProfile(options.profile);
   }
 
   // Saved config for the active/specified profile as fallback (env vars win)

@@ -49,8 +49,8 @@ export class Poller {
     return (
       msg.includes("non-JSON response") ||
       msg.includes("is not valid JSON") ||
-      msg.includes("401") ||
-      msg.includes("403") ||
+      /\b(?:401|403)\s+(?:Unauthorized|Forbidden)/i.test(msg) ||
+      /(?:status|HTTP)\s*(?:401|403)\b/i.test(msg) ||
       msg.includes("Unauthorized") ||
       msg.includes("Forbidden")
     );
