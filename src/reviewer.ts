@@ -55,7 +55,6 @@ export class PrReviewer {
   private readonly ai: AiProvider;
   private readonly logger: Logger;
   private readonly maxFiles: number;
-  private readonly maxDiffLength: number;
   private readonly skipPatterns: RegExp[];
   private readonly systemPrompt: string;
   private readonly processedIterations = new Map<string, number>();
@@ -69,7 +68,6 @@ export class PrReviewer {
     );
     this.ai = createAiProvider(options.ai);
     this.maxFiles = options.maxFiles ?? DEFAULTS.maxFiles;
-    this.maxDiffLength = options.maxDiffLength ?? DEFAULTS.maxDiffLength;
     this.skipPatterns = options.skipPatterns ?? SKIP_PATTERNS;
     this.systemPrompt = options.customPrompt ?? SYSTEM_PROMPT;
   }
@@ -186,6 +184,7 @@ export class PrReviewer {
         prId,
         commitId: latestIteration.sourceRefCommit.commitId,
         logger: this.logger,
+        fileChanges,
       };
 
       // Pre-fetch project context (structure + key config files)
@@ -387,30 +386,31 @@ export class PrReviewer {
     prDescription?: string,
     projectContext?: string,
   ): string {
-    const header = [`**PR Title:** ${prTitle}`];
+    const lines = [`**PR Title:** ${prTitle}`];
     if (prDescription) {
-      header.push(`**PR Description:** ${prDescription}`);
+      lines.push(`**PR Description:** ${prDescription}`);
     }
-    header.push(`**Files changed:** ${files.length}`);
-    header.push("");
+    lines.push(`**Files changed:** ${files.length}`);
+    lines.push("");
 
     if (projectContext) {
-      header.push("## Project Context");
-      header.push(projectContext);
-      header.push("");
+      lines.push("## Project Context");
+      lines.push(projectContext);
+      lines.push("");
     }
 
-    const fileBlocks = files.map((file) => {
-      const truncated =
-        file.content.length > this.maxDiffLength
-          ? file.content.slice(0, this.maxDiffLength) +
-            "\n... (truncated, diff too large)"
-          : file.content;
+    lines.push("## Changed Files");
+    lines.push(
+      "Use `get_file_diff` to review the diff for each file. " +
+        "Use `get_file_content` only if you need the full file for additional context.",
+    );
+    lines.push("");
 
-      return `### ${file.changeType.toUpperCase()}: ${file.filePath}\n\`\`\`diff\n${truncated}\n\`\`\``;
-    });
+    for (const file of files) {
+      lines.push(`- **${file.changeType.toUpperCase()}**: \`${file.filePath}\``);
+    }
 
-    return header.join("\n") + fileBlocks.join("\n\n");
+    return lines.join("\n");
   }
 
   private parseReviewResponse(responseText: string): ReviewResult {

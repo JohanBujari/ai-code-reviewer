@@ -91,15 +91,48 @@ export function createReviewTools(ctx: ReviewContext) {
     }),
 
     /**
-     * Fetch the full content of any file in the repository.
-     * Use this when you see a function call, import, or reference
-     * and need to understand what it does.
+     * Get the diff (changes only) for a specific file in this PR.
+     * This is the PRIMARY tool for reviewing — it shows only what was
+     * added, modified, or deleted in unified diff format.
+     */
+    get_file_diff: tool({
+      description:
+        'Get the diff (changes only) for a file changed in this PR. Returns a unified diff showing ' +
+        'only added (+), removed (-), and a few context lines. This is your PRIMARY tool for reviewing code — ' +
+        'call it for each file you want to review. Lines starting with "+" are additions, "-" are deletions.',
+      parameters: z.object({
+        filePath: z
+          .string()
+          .describe('Path of the changed file, e.g. /src/utils/auth.ts'),
+      }),
+      execute: async ({ filePath }) => {
+        ctx.logger.info(`[tool] get_file_diff: ${filePath}`);
+        const change = ctx.fileChanges.find((f) => f.filePath === filePath);
+        if (!change) {
+          return { error: `File not found in PR changes: ${filePath}. Use get_file_content to read files that were not changed.` };
+        }
+        const maxChars = 30_000;
+        const truncated = change.content.length > maxChars;
+        return {
+          filePath: change.filePath,
+          changeType: change.changeType,
+          diff: truncated ? change.content.slice(0, maxChars) + '\n... (truncated)' : change.content,
+          truncated,
+        };
+      },
+    }),
+
+    /**
+     * Fetch the FULL content of any file in the repository.
+     * Use this for additional context beyond the diff — e.g. to understand
+     * an imported function, a base class, or surrounding code.
      */
     get_file_content: tool({
       description:
-        'Fetch the full content of a file from the repository at the PR commit. ' +
-        'Use this to read function definitions, imported modules, config files, ' +
-        'or any code referenced in the changed files that you need to understand.',
+        'Fetch the FULL content of a file from the repository (not just the diff). ' +
+        'Use this when you need additional context beyond what the diff shows — for example, ' +
+        'to understand a function definition, read an imported module, check a base class, ' +
+        'or see surrounding code. Do NOT use this as your primary review tool; use get_file_diff instead.',
       parameters: z.object({
         filePath: z
           .string()
@@ -116,7 +149,6 @@ export function createReviewTools(ctx: ReviewContext) {
         if (!content) {
           return { error: `File not found or empty: ${filePath}` };
         }
-        // Truncate very large files to avoid blowing up the context
         const maxChars = 30_000;
         const truncated = content.length > maxChars;
         return {

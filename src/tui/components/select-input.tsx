@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 export interface SelectItem {
@@ -18,6 +18,7 @@ export function SelectInput({ items, onSelect, accentColor = '#00d4ff' }: Select
   const [activeIndex, setActiveIndex] = useState(0);
 
   useInput((input, key) => {
+    if (items.length === 0) return;
     if (key.upArrow || input === 'k') {
       setActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
     }
