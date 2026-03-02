@@ -78,7 +78,7 @@ node dist/cli.mjs watch --state-file ./my-state.json
 
 # Or link globally
 npm link
-pr-agent watch
+axiom watch
 ```
 
 ### Review a single PR
@@ -89,11 +89,12 @@ node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pul
 
 ### TUI Keyboard Shortcuts
 
-| Key | Action                  |
-| --- | ----------------------- |
-| `q` | Quit                    |
-| `p` | Pause/resume polling    |
-| `r` | Force immediate refresh |
+| Key | Action                           |
+| --- | -------------------------------- |
+| `q` | Quit                             |
+| `p` | Pause/resume polling             |
+| `r` | Force immediate refresh          |
+| `c` | Clear saved credentials and exit |
 
 ### TUI Display
 
@@ -149,7 +150,7 @@ const reviewer = createPrReviewer({
   ai: {
     provider: "anthropic",
     apiKey: process.env.ANTHROPIC_API_KEY!,
-    model: "claude-sonnet-4-20250514", // optional, this is the default
+    model: "claude-sonnet-4-5", // optional, this is the default
   },
 });
 
@@ -260,7 +261,7 @@ ai: {
 ai: {
   provider: 'anthropic',
   apiKey: 'sk-ant-...',
-  model: 'claude-sonnet-4-20250514', // optional, this is the default
+  model: 'claude-sonnet-4-5', // optional, this is the default
 }
 ```
 
@@ -402,12 +403,14 @@ console.log(`Found ${result.comments.length} issues`);
 
 ```
 src/
-├── cli/                    # CLI entry point (pr-agent command)
+├── cli/                    # CLI entry point (axiom command)
 │   ├── index.ts            # Commander setup
 │   ├── env.ts              # .env loader + validation
+│   ├── config-store.ts     # Credential persistence (~/.axiom/config.json)
+│   ├── prompt.ts           # Non-TUI prompting primitives
 │   └── commands/
-│       ├── watch.ts        # pr-agent watch
-│       └── review.ts       # pr-agent review <url>
+│       ├── watch.ts        # axiom watch
+│       └── review.ts       # axiom review <url>
 ├── watcher/                # Polling + queue engine
 │   ├── orchestrator.ts     # Wires poller → queue → reviewer
 │   ├── poller.ts           # Polls Azure DevOps on interval
@@ -415,17 +418,16 @@ src/
 │   ├── state.ts            # JSON file persistence
 │   └── types.ts            # Watcher-specific types
 ├── tui/                    # Terminal UI (Ink + React)
-│   ├── app.tsx             # Root component
+│   ├── app.tsx             # Root component (watch dashboard)
+│   ├── cli-app.tsx         # Interactive config wizard + review UI
 │   ├── store.ts            # Event-driven state
 │   ├── hooks/
 │   │   └── use-app-state.ts
-│   └── components/         # 6 UI components
-├── ai/                     # AI provider implementations
+│   └── components/         # UI components
+├── ai/                     # AI provider (Vercel AI SDK)
 │   ├── provider.ts         # Interface + system prompt
-│   ├── openai.ts           # OpenAI (raw fetch)
-│   ├── anthropic.ts        # Anthropic (raw fetch)
-│   ├── azure-openai.ts     # Azure OpenAI (raw fetch)
-│   └── vercel-ai-provider.ts  # Vercel AI SDK (structured JSON)
+│   ├── vercel-ai-provider.ts  # OpenAI/Anthropic/Azure via Vercel AI SDK
+│   └── tools.ts            # AI tool definitions
 ├── azure-devops/
 │   └── client.ts           # Azure DevOps REST API client
 ├── reviewer.ts             # Core review engine
