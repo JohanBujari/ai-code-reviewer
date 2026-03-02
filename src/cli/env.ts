@@ -1,13 +1,17 @@
 import dotenv from "dotenv";
-import { homedir } from "os";
-import { join } from "path";
 import type { AiConfig } from "../config";
 import type { WatchedRepo } from "../watcher/types";
-import { loadSavedConfig, profileExists, createProfile, setActiveProfile } from "./config-store";
+import {
+  loadSavedConfig,
+  profileExists,
+  createProfile,
+  setActiveProfile,
+  getDefaultStatePath,
+} from "./config-store";
 import { promptForMissingVars } from "./prompt";
 import { getDefaultStatePath } from "./config-store";
 
-export const DEFAULT_STATE_FILE = join(homedir(), ".axiom", "pr-agent-state.json");
+export const DEFAULT_STATE_FILE = getDefaultStatePath();
 
 // ── Types ────────────────────────────────────────────────
 
