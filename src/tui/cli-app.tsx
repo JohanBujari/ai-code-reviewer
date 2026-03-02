@@ -113,15 +113,19 @@ function buildConfigFromEnv(
 // ── Review helpers ──
 
 const PR_URL_REGEX = /https:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/;
-const SEVERITY_COLOR: Record<string, string> = { critical: 'red', warning: 'yellow', suggestion: 'blue', nitpick: 'gray' };
-const SEVERITY_BADGE: Record<string, string> = { critical: 'CRITICAL', warning: 'WARNING', suggestion: 'SUGGEST', nitpick: 'NITPICK' };
+const SEVERITY_CONFIG: Record<string, { color: string; icon: string; label: string }> = {
+  critical: { color: '#ff4444', icon: '\u26a0', label: 'CRITICAL' },
+  warning: { color: '#ffaa00', icon: '\u25cf', label: 'WARNING' },
+  suggestion: { color: '#00aaff', icon: '\u25cb', label: 'SUGGEST' },
+  nitpick: { color: '#666666', icon: '\u00b7', label: 'NITPICK' },
+};
 
 // ── Menu items ──
 
 const MENU_ITEMS: SelectItem[] = [
-  { label: 'Watch repositories', value: 'watch', description: '— Monitor repos for new PRs' },
-  { label: 'Review a PR', value: 'review', description: '— Review a single pull request' },
-  { label: 'Exit', value: 'exit', description: '' },
+  { label: 'Watch repositories', value: 'watch', icon: '\u25b6', description: 'Monitor repos for new PRs' },
+  { label: 'Review a PR', value: 'review', icon: '\u2691', description: 'Review a single pull request' },
+  { label: 'Exit', value: 'exit', icon: '\u2715', description: '' },
 ];
 
 // ── Phases ──
@@ -322,17 +326,29 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {/* Phase: Config form */}
       {phase === 'config' && missingVars.length > 0 && (
         <Box flexDirection="column" paddingX={1}>
+          <Box marginBottom={1} gap={1}>
+            <Text color="#00d4ff" bold>{'\u2699'} Configuration</Text>
+            <Text color="#555555">
+              [{configIndex + 1}/{missingVars.length}]
+            </Text>
+          </Box>
+
+          {/* Progress bar */}
           <Box marginBottom={1}>
-            <Text bold color="cyan">Configuration Setup</Text>
-            <Text dimColor> ({configIndex + 1}/{missingVars.length})</Text>
+            <Text color="#00d4ff">
+              {'\u2588'.repeat(configIndex)}
+            </Text>
+            <Text color="#333333">
+              {'\u2591'.repeat(missingVars.length - configIndex)}
+            </Text>
           </Box>
 
           {/* Completed fields */}
           {missingVars.slice(0, configIndex).map((def) => (
             <Box key={def.key} gap={1}>
-              <Text color="green">✓</Text>
-              <Text dimColor>{def.label}:</Text>
-              <Text>{def.type === 'secret' ? '••••••••' : configAnswers[def.key]}</Text>
+              <Text color="#00ff88">{'\u2713'}</Text>
+              <Text color="#666666">{def.label}:</Text>
+              <Text color="#888888">{def.type === 'secret' ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : configAnswers[def.key]}</Text>
             </Box>
           ))}
 
@@ -361,7 +377,7 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {phase === 'review-url' && (
         <Box flexDirection="column" paddingX={1}>
           <Box marginBottom={1}>
-            <Text bold color="cyan">Review a Pull Request</Text>
+            <Text color="#00d4ff" bold>{'\u2691'} Review a Pull Request</Text>
           </Box>
           <TextInput
             label="PR URL"
@@ -377,11 +393,18 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {phase === 'reviewing' && (
         <Box flexDirection="column" paddingX={1}>
           <Box marginBottom={1}>
-            <Text bold color="cyan">Review in Progress</Text>
+            <Text color="#00d4ff" bold>{'\u2691'} Review in Progress</Text>
           </Box>
-          {prInfo && <Text>PR #{prInfo.prId} in {prInfo.project}/{prInfo.repo}</Text>}
+          {prInfo && (
+            <Box gap={1}>
+              <Text color="#888888">PR</Text>
+              <Text color="white" bold>#{prInfo.prId}</Text>
+              <Text color="#555555">in</Text>
+              <Text color="#00d4ff">{prInfo.project}/{prInfo.repo}</Text>
+            </Box>
+          )}
           <Box marginTop={1}>
-            <Spinner label={reviewStatus} />
+            <Spinner label={reviewStatus} showDots />
           </Box>
         </Box>
       )}
@@ -389,12 +412,16 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {/* Phase: Review error */}
       {phase === 'review-error' && (
         <Box flexDirection="column" paddingX={1}>
-          <Box borderStyle="single" borderColor="red" paddingX={1} flexDirection="column">
-            <Text bold color="red">Review Failed</Text>
-            <Text color="red" wrap="wrap">{reviewError}</Text>
+          <Box borderStyle="round" borderColor="#ff4444" paddingX={1} flexDirection="column">
+            <Text bold color="#ff4444">{'\u2717'} Review Failed</Text>
+            <Box marginTop={1}>
+              <Text color="#ff8888" wrap="wrap">{reviewError}</Text>
+            </Box>
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Press <Text bold>q</Text> to exit</Text>
+          <Box marginTop={1} gap={2}>
+            <Text color="#555555">Press</Text>
+            <Text color="#00d4ff" bold>q</Text>
+            <Text color="#555555">to exit</Text>
           </Box>
         </Box>
       )}
@@ -402,19 +429,31 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
       {/* Phase: Review complete */}
       {phase === 'review-done' && reviewResult && (
         <Box flexDirection="column" paddingX={1}>
-          <Box borderStyle="single" borderColor="cyan" paddingX={1} flexDirection="column">
-            <Text bold color="cyan">Review Summary</Text>
-            {prInfo && <Text dimColor>PR #{prInfo.prId} in {prInfo.project}/{prInfo.repo}</Text>}
+          {/* Summary box */}
+          <Box borderStyle="round" borderColor="#00d4ff" paddingX={1} flexDirection="column">
+            <Box gap={1}>
+              <Text color="#00d4ff" bold>{'\u2713'} Review Complete</Text>
+              {prInfo && (
+                <Text color="#555555">
+                  {'\u2502'} PR #{prInfo.prId} in {prInfo.project}/{prInfo.repo}
+                </Text>
+              )}
+            </Box>
             <Box marginTop={1}>
-              <Text wrap="wrap">{reviewResult.summary}</Text>
+              <Text wrap="wrap" color="#cccccc">{reviewResult.summary}</Text>
             </Box>
           </Box>
 
+          {/* Comments */}
           <Box flexDirection="column" marginTop={1}>
-            <Text bold underline>Comments ({reviewResult.comments.length})</Text>
+            <Box gap={1} marginBottom={1}>
+              <Text color="white" bold>Comments</Text>
+              <Text color="#555555">({reviewResult.comments.length})</Text>
+            </Box>
             {reviewResult.comments.length === 0 ? (
-              <Box marginTop={1}>
-                <Text color="green">No issues found. Code looks good!</Text>
+              <Box gap={1}>
+                <Text color="#00ff88">{'\u2713'}</Text>
+                <Text color="#00ff88">No issues found. Code looks good!</Text>
               </Box>
             ) : (
               reviewResult.comments.map((comment, i) => (
@@ -423,16 +462,19 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
             )}
           </Box>
 
-          <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-            <Text dimColor>Press <Text bold>q</Text> to exit</Text>
+          {/* Footer */}
+          <Box marginTop={1} borderStyle="round" borderColor="#333333" paddingX={1} gap={2}>
+            <Text color="#555555">Press</Text>
+            <Text color="#00d4ff" bold>q</Text>
+            <Text color="#555555">to exit</Text>
           </Box>
         </Box>
       )}
 
       {/* Phase: Launching watch */}
       {phase === 'launching-watch' && (
-        <Box paddingX={1}>
-          <Spinner label="Launching watcher..." />
+        <Box paddingX={1} gap={1}>
+          <Spinner label="Launching watcher" showDots />
         </Box>
       )}
     </Box>
@@ -442,18 +484,17 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
 // ── Comment row ──
 
 function CommentRow({ comment }: { comment: ReviewComment }) {
-  const color = SEVERITY_COLOR[comment.severity] ?? 'white';
-  const badge = SEVERITY_BADGE[comment.severity] ?? comment.severity.toUpperCase();
+  const config = SEVERITY_CONFIG[comment.severity] ?? { color: '#888888', icon: '\u25cb', label: comment.severity.toUpperCase() };
 
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1}>
       <Box gap={1}>
-        <Text color={color} bold>[{badge}]</Text>
-        <Text color="cyan">{comment.filePath}</Text>
-        <Text dimColor>:{comment.lineNumber}</Text>
+        <Text color={config.color} bold>{config.icon} {config.label}</Text>
+        <Text color="#00d4ff">{comment.filePath}</Text>
+        <Text color="#555555">:{comment.lineNumber}</Text>
       </Box>
       <Box paddingLeft={2}>
-        <Text wrap="wrap">{comment.message}</Text>
+        <Text wrap="wrap" color="#cccccc">{comment.message}</Text>
       </Box>
     </Box>
   );

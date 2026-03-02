@@ -5,26 +5,38 @@ interface StatusBarProps {
   errors: Array<{ timestamp: number; message: string }>;
 }
 
+function KeyBadge({ keyChar, label }: { keyChar: string; label: string }) {
+  return (
+    <Box gap={0}>
+      <Text color="#00d4ff" bold> {keyChar} </Text>
+      <Text color="#888888">{label}</Text>
+    </Box>
+  );
+}
+
 export function StatusBar({ errors }: StatusBarProps) {
   const lastError = errors.length > 0 ? errors[errors.length - 1] : undefined;
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="single"
-      borderColor="gray"
+      borderStyle="round"
+      borderColor="#333333"
       paddingX={1}
       marginTop={1}
     >
-      <Text dimColor>
-        <Text bold>q</Text>:quit
-        <Text bold>p</Text>:pause/resume
-        <Text bold>r</Text>:refresh
-      </Text>
+      <Box gap={2}>
+        <KeyBadge keyChar="q" label="quit" />
+        <Text color="#333333">{'\u2502'}</Text>
+        <KeyBadge keyChar="p" label="pause/resume" />
+        <Text color="#333333">{'\u2502'}</Text>
+        <KeyBadge keyChar="r" label="refresh" />
+      </Box>
       {lastError && (
-        <Text color="red" wrap="wrap">
-          Last error: {lastError.message}
-        </Text>
+        <Box marginTop={1}>
+          <Text color="red" bold>{'\u2717'} </Text>
+          <Text color="red" wrap="wrap">{lastError.message}</Text>
+        </Box>
       )}
     </Box>
   );
