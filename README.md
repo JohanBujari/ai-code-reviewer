@@ -89,11 +89,11 @@ node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pul
 
 ### TUI Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `p` | Pause/resume polling |
-| `r` | Force immediate refresh |
+| Key | Action                           |
+| --- | -------------------------------- |
+| `q` | Quit                             |
+| `p` | Pause/resume polling             |
+| `r` | Force immediate refresh          |
 | `c` | Clear saved credentials and exit |
 
 ### TUI Display
@@ -301,20 +301,20 @@ ai: {
 
 ## Environment Variables (CLI)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AZURE_DEVOPS_ORG` | Yes | Azure DevOps organization name |
-| `AZURE_DEVOPS_PAT` | Yes | Personal access token |
-| `WATCH_REPOS` | Yes | Comma-separated repos: `project/repoId/name` |
-| `AI_PROVIDER` | Yes | `openai`, `anthropic`, or `azure-openai` |
-| `OPENAI_API_KEY` | If openai | OpenAI API key |
-| `OPENAI_MODEL` | No | Override model (default: `gpt-5.2`) |
-| `ANTHROPIC_API_KEY` | If anthropic | Anthropic API key |
-| `ANTHROPIC_MODEL` | No | Override model (default: `claude-sonnet-4-5`) |
-| `AZURE_OPENAI_ENDPOINT` | If azure-openai | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_API_KEY` | If azure-openai | Azure OpenAI API key |
-| `AZURE_OPENAI_DEPLOYMENT` | If azure-openai | Deployment name |
-| `AZURE_OPENAI_API_VERSION` | No | API version (default: `2024-02-01`) |
+| Variable                   | Required        | Description                                          |
+| -------------------------- | --------------- | ---------------------------------------------------- |
+| `AZURE_DEVOPS_ORG`         | Yes             | Azure DevOps organization name                       |
+| `AZURE_DEVOPS_PAT`         | Yes             | Personal access token                                |
+| `WATCH_REPOS`              | Yes             | Comma-separated repos: `project/repoId/name`         |
+| `AI_PROVIDER`              | Yes             | `openai`, `anthropic`, or `azure-openai`             |
+| `OPENAI_API_KEY`           | If openai       | OpenAI API key                                       |
+| `OPENAI_MODEL`             | No              | Override model (default: `gpt-5.2`)                  |
+| `ANTHROPIC_API_KEY`        | If anthropic    | Anthropic API key                                    |
+| `ANTHROPIC_MODEL`          | No              | Override model (default: `claude-sonnet-4-20250514`) |
+| `AZURE_OPENAI_ENDPOINT`    | If azure-openai | Azure OpenAI endpoint URL                            |
+| `AZURE_OPENAI_API_KEY`     | If azure-openai | Azure OpenAI API key                                 |
+| `AZURE_OPENAI_DEPLOYMENT`  | If azure-openai | Deployment name                                      |
+| `AZURE_OPENAI_API_VERSION` | No              | API version (default: `2024-02-01`)                  |
 
 ## Azure DevOps Setup
 
