@@ -23,10 +23,10 @@ export function Spinner({ label, color = '#00d4ff', showDots = false }: SpinnerP
 
   useEffect(() => {
     if (!showDots) return;
-    const timer = setInterval(() => {
+    const dotsTimer = setInterval(() => {
       setDotFrame((prev) => (prev + 1) % DOTS_FRAMES.length);
     }, 400);
-    return () => clearInterval(timer);
+    return () => clearInterval(dotsTimer);
   }, [showDots]);
 
   return (

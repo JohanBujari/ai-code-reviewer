@@ -55,8 +55,8 @@ export function SelectInput({ items, onSelect, accentColor = '#00d4ff' }: Select
         );
       })}
       <Box marginTop={1} gap={2}>
-        <Text color="#555555">\u2191\u2193 navigate</Text>
-        <Text color="#555555">\u21b5 select</Text>
+        <Text color="#555555">{'\u2191\u2193'} navigate</Text>
+        <Text color="#555555">{'\u21b5'} select</Text>
       </Box>
     </Box>
   );
