@@ -40,6 +40,7 @@ export type WatcherEvent =
   | { type: 'poll-start'; repos: WatchedRepo[] }
   | { type: 'poll-complete'; newJobs: number }
   | { type: 'poll-error'; error: string }
+  | { type: 'fatal-error'; error: string }
   | { type: 'review-queued'; job: ReviewJob }
   | { type: 'review-start'; job: ReviewJob }
   | { type: 'review-file-progress'; jobId: string; filePath: string; fileIndex: number; totalFiles: number }

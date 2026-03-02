@@ -12,6 +12,11 @@ import { PrReviewer } from "../reviewer";
 import {
   loadSavedConfig,
   mergeAndSaveConfig,
+  listProfiles,
+  getActiveProfile,
+  setActiveProfile,
+  createProfile,
+  profileExists,
   getDefaultStatePath,
 } from "../cli/config-store";
 import type { BaseEnvConfig, WatcherEnvConfig } from "../cli/env";
@@ -208,6 +213,8 @@ const MENU_ITEMS: SelectItem[] = [
 
 type Phase =
   | "menu"
+  | "profile-select"
+  | "profile-name"
   | "config"
   | "review-url"
   | "reviewing"
@@ -219,17 +226,21 @@ type Phase =
 
 interface CliAppProps {
   initialCommand?: "watch" | "review";
+  initialProfile?: string;
   reviewUrl?: string;
   options: { interval?: string; stateFile?: string };
 }
 
-function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
+function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppProps) {
   const { exit } = useApp();
 
   // State
   const [phase, setPhase] = useState<Phase>("menu");
   const [command, setCommand] = useState<"watch" | "review" | null>(
     initialCommand ?? null,
+  );
+  const [selectedProfile, setSelectedProfile] = useState<string | null>(
+    initialProfile ?? null,
   );
   const [configAnswers, setConfigAnswers] = useState<Record<string, string>>(
     {},
@@ -255,46 +266,6 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
   });
 
   // ── Transition helpers ──
-
-  const startConfig = useCallback((cmd: "watch" | "review") => {
-    dotenv.config();
-    const saved = loadSavedConfig();
-    // Pre-populate answers from saved config
-    const preAnswers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(saved)) {
-      if (value) preAnswers[key] = value;
-    }
-    const missing = detectMissingVars(cmd, preAnswers, saved);
-    if (missing.length === 0) {
-      finishConfig(cmd, preAnswers);
-      return;
-    }
-    setCommand(cmd);
-    setMissingVars(missing);
-    setConfigIndex(0);
-    setConfigAnswers(preAnswers);
-    setPhase("config");
-  }, []);
-
-  const finishConfig = useCallback(
-    (cmd: "watch" | "review", answers: Record<string, string>) => {
-      // Save credentials for next time
-      mergeAndSaveConfig(answers);
-      for (const [key, value] of Object.entries(answers)) {
-        process.env[key] = value;
-      }
-      if (cmd === "watch") {
-        launchWatch(answers);
-      } else {
-        if (reviewUrl) {
-          startReview(reviewUrl, answers);
-        } else {
-          setPhase("review-url");
-        }
-      }
-    },
-    [reviewUrl],
-  );
 
   const launchWatch = useCallback(
     (answers: Record<string, string>) => {
@@ -390,6 +361,63 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
     [options],
   );
 
+  const finishConfig = useCallback(
+    (cmd: "watch" | "review", answers: Record<string, string>) => {
+      mergeAndSaveConfig(answers, selectedProfile ?? undefined);
+      for (const [key, value] of Object.entries(answers)) {
+        process.env[key] = value;
+      }
+      if (cmd === "watch") {
+        launchWatch(answers);
+      } else {
+        if (reviewUrl) {
+          startReview(reviewUrl, answers);
+        } else {
+          setPhase("review-url");
+        }
+      }
+    },
+    [selectedProfile, reviewUrl, launchWatch, startReview],
+  );
+
+  const proceedWithProfile = useCallback(
+    (cmd: "watch" | "review", profileName: string) => {
+      setActiveProfile(profileName);
+      setSelectedProfile(profileName);
+
+      const saved = loadSavedConfig(profileName);
+      const preAnswers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(saved)) {
+        if (value) preAnswers[key] = value;
+      }
+      const missing = detectMissingVars(cmd, preAnswers, saved);
+      if (missing.length === 0) {
+        finishConfig(cmd, preAnswers);
+        return;
+      }
+      setMissingVars(missing);
+      setConfigIndex(0);
+      setConfigAnswers(preAnswers);
+      setPhase("config");
+    },
+    [finishConfig],
+  );
+
+  const startConfig = useCallback(
+    (cmd: "watch" | "review") => {
+      dotenv.config();
+      setCommand(cmd);
+
+      if (initialProfile) {
+        proceedWithProfile(cmd, initialProfile);
+        return;
+      }
+
+      setPhase("profile-select");
+    },
+    [initialProfile, proceedWithProfile],
+  );
+
   // ── Init: if a command was passed directly, skip menu ──
   useEffect(() => {
     if (initialCommand) {
@@ -414,7 +442,12 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
         const lookup = (key: string) => updated[key] ?? process.env[key];
         const newMissing = providerVars.filter((def) => !lookup(def.key));
         if (newMissing.length > 0) {
-          const updatedVars = [...missingVars, ...newMissing];
+          // Insert provider vars (e.g. API key) after AI_PROVIDER, before WATCH_REPOS
+          const updatedVars = [
+            ...missingVars.slice(0, nextIndex),
+            ...newMissing,
+            ...missingVars.slice(nextIndex),
+          ];
           setMissingVars(updatedVars);
           setConfigIndex(nextIndex);
           return;
@@ -452,6 +485,58 @@ function CliApp({ initialCommand, reviewUrl, options }: CliAppProps) {
             startConfig(cmd);
           }}
         />
+      )}
+
+      {/* Phase: Profile select */}
+      {phase === 'profile-select' && (
+        <Box flexDirection="column" paddingX={1}>
+          <Box marginBottom={1}>
+            <Text color="#00d4ff" bold>{'\u2630'} Select Profile</Text>
+          </Box>
+          <SelectInput
+            items={[
+              ...listProfiles().map((p) => ({
+                label: p === getActiveProfile() ? `${p} (active)` : p,
+                value: p,
+              })),
+              { label: '+ Create new profile', value: '__new__' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === '__new__') {
+                setPhase('profile-name');
+              } else {
+                proceedWithProfile(command!, item.value);
+              }
+            }}
+          />
+        </Box>
+      )}
+
+      {/* Phase: Profile name input */}
+      {phase === 'profile-name' && (
+        <Box flexDirection="column" paddingX={1}>
+          <Box marginBottom={1}>
+            <Text color="#00d4ff" bold>{'\u2630'} New Profile</Text>
+          </Box>
+          <TextInput
+            label="Profile name"
+            onSubmit={(name) => {
+              try {
+                createProfile(name);
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes("already exists")) {
+                  proceedWithProfile(command!, name);
+                  return;
+                }
+                setReviewError(msg);
+                setPhase("review-error");
+                return;
+              }
+              proceedWithProfile(command!, name);
+            }}
+          />
+        </Box>
       )}
 
       {/* Phase: Config form */}
@@ -679,11 +764,22 @@ function CommentRow({ comment }: { comment: ReviewComment }) {
 export function startCliApp(opts: {
   command?: "watch" | "review";
   reviewUrl?: string;
+  profile?: string;
   options: { interval?: string; stateFile?: string };
 }): void {
+  if (opts.profile && !profileExists(opts.profile)) {
+    try {
+      createProfile(opts.profile);
+      setActiveProfile(opts.profile);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  }
   render(
     <CliApp
       initialCommand={opts.command}
+      initialProfile={opts.profile}
       reviewUrl={opts.reviewUrl}
       options={opts.options}
     />,

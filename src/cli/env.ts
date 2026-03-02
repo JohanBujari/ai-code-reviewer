@@ -1,8 +1,17 @@
 import dotenv from "dotenv";
 import type { AiConfig } from "../config";
 import type { WatchedRepo } from "../watcher/types";
+import {
+  loadSavedConfig,
+  profileExists,
+  createProfile,
+  setActiveProfile,
+  getDefaultStatePath,
+} from "./config-store";
 import { promptForMissingVars } from "./prompt";
 import { getDefaultStatePath } from "./config-store";
+
+export const DEFAULT_STATE_FILE = getDefaultStatePath();
 
 // ── Types ────────────────────────────────────────────────
 
@@ -77,12 +86,19 @@ function detectMissingVars(
 // ── Interactive Loader (async, prompts on missing vars) ──
 
 export async function loadEnvConfigInteractive(
-  options: { interval?: string; stateFile?: string },
+  options: { interval?: string; stateFile?: string; profile?: string },
   command: "watch" | "review",
 ): Promise<WatcherEnvConfig | BaseEnvConfig> {
   dotenv.config();
 
-  let lookup = createEnvLookup();
+  if (options.profile && !profileExists(options.profile)) {
+    createProfile(options.profile);
+    setActiveProfile(options.profile);
+  }
+
+  // Saved config for the active/specified profile as fallback (env vars win)
+  const saved = loadSavedConfig(options.profile);
+  let lookup: EnvLookup = (key) => process.env[key] ?? saved[key];
   const missing = detectMissingVars(command, lookup);
 
   if (missing.size > 0) {
@@ -205,8 +221,10 @@ function buildAiConfig(
 export function loadEnvConfig(options: {
   interval?: string;
   stateFile?: string;
+  profile?: string;
 }): WatcherEnvConfig {
   dotenv.config();
-  const lookup = createEnvLookup();
+  const saved = loadSavedConfig(options.profile);
+  const lookup: EnvLookup = (key) => process.env[key] ?? saved[key];
   return buildConfig(lookup, options, "watch") as WatcherEnvConfig;
 }

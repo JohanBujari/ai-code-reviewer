@@ -1,4 +1,9 @@
 import { createInterface } from "node:readline/promises";
+import {
+  listProfiles,
+  getActiveProfile,
+  createProfile,
+} from "./config-store";
 
 // ── Prompting Primitives ─────────────────────────────────
 
@@ -184,4 +189,29 @@ export async function promptForMissingVars(
 
   console.log("");
   return answers;
+}
+
+/**
+ * Prompt user to select or create a profile (non-TUI mode).
+ * Returns the chosen profile name.
+ */
+export async function promptForProfile(): Promise<string> {
+  const profiles = listProfiles();
+  if (profiles.length === 0) return "default";
+
+  const active = getActiveProfile();
+  const labels = profiles.map((p) => (p === active ? `${p} (active)` : p));
+  labels.push("+ Create new profile");
+
+  console.log("");
+  const selected = await askSelect("Select profile:", labels);
+
+  if (selected === "+ Create new profile") {
+    const name = await askText("  Profile name: ");
+    createProfile(name);
+    return name;
+  }
+
+  // Strip the " (active)" suffix if present
+  return selected.replace(" (active)", "");
 }

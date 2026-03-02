@@ -88,6 +88,11 @@ export class TuiStore extends EventEmitter {
         this.addLog('error', `Poll error: ${event.error}`);
         break;
 
+      case 'fatal-error':
+        this.addLog('error', `Fatal: ${event.error}`);
+        this.state.status = 'shutting-down';
+        break;
+
       case 'shutdown':
         this.state.status = 'shutting-down';
         break;
