@@ -40,7 +40,6 @@ export function createReviewTools(ctx: ReviewContext) {
       parameters: z.object({
         scopePath: z
           .string()
-          .optional()
           .default('/')
           .describe('Root path to scan from (default "/")'),
       }),
@@ -170,7 +169,6 @@ export function createReviewTools(ctx: ReviewContext) {
           .describe('Absolute path to the file in the repo, e.g. /src/index.ts'),
         top: z
           .number()
-          .optional()
           .default(5)
           .describe('Number of recent commits to return (default 5, max 10)'),
       }),
