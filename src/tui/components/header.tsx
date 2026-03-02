@@ -24,6 +24,12 @@ function formatAgo(timestamp: number): string {
   return `${Math.floor(seconds / 60)}m ago`;
 }
 
+const STATUS_CONFIG = {
+  watching: { dot: '\u25cf', color: '#00ff88', label: 'WATCHING' },
+  paused: { dot: '\u25cf', color: '#ffaa00', label: 'PAUSED' },
+  'shutting-down': { dot: '\u25cf', color: '#ff4444', label: 'STOPPING' },
+} as const;
+
 export function Header({ status, startedAt, lastPollAt }: HeaderProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -31,25 +37,26 @@ export function Header({ status, startedAt, lastPollAt }: HeaderProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const statusColor = status === 'watching' ? 'green' : status === 'paused' ? 'yellow' : 'red';
-  const statusLabel = status.toUpperCase();
+  const { dot, color, label } = STATUS_CONFIG[status];
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor="#00d4ff" paddingX={1}>
       <Box justifyContent="space-between">
-        <Text bold color="cyan">
-          PR Agent Watcher
-        </Text>
+        <Box gap={1}>
+          <Text bold color="#00d4ff">Axiom</Text>
+          <Text color="#555555">{'\u2502'}</Text>
+          <Text color={color}>{dot} {label}</Text>
+        </Box>
         <Box gap={2}>
-          <Text dimColor>Uptime: {formatUptime(Date.now() - startedAt)}</Text>
-          <Text color={statusColor} bold>
-            [{statusLabel}]
-          </Text>
+          <Text color="#555555">{'\u23f1'} {formatUptime(Date.now() - startedAt)}</Text>
+          {lastPollAt && (
+            <>
+              <Text color="#333333">{'\u2502'}</Text>
+              <Text color="#555555">Polled {formatAgo(lastPollAt)}</Text>
+            </>
+          )}
         </Box>
       </Box>
-      {lastPollAt && (
-        <Text dimColor>Last poll: {formatAgo(lastPollAt)}</Text>
-      )}
     </Box>
   );
 }
