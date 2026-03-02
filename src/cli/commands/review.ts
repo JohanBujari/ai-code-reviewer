@@ -5,7 +5,7 @@ import type { Logger } from "../../types";
 const PR_URL_REGEX =
   /https:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/;
 
-export async function reviewCommand(url: string): Promise<void> {
+export async function reviewCommand(url: string, profile?: string): Promise<void> {
   const match = url.match(PR_URL_REGEX);
   if (!match) {
     console.error(
@@ -19,7 +19,7 @@ export async function reviewCommand(url: string): Promise<void> {
 
   let config;
   try {
-    config = await loadEnvConfigInteractive({}, "review");
+    config = await loadEnvConfigInteractive({ profile }, "review");
   } catch (error) {
     console.error(
       `Configuration error: ${error instanceof Error ? error.message : error}`,

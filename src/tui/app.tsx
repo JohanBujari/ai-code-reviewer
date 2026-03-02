@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { render, Box, useInput, useApp } from "ink";
 import type { WatcherOrchestrator } from "../watcher/orchestrator";
 import type { TuiStore } from "./store";
-import { clearConfig, getConfigPath } from "../cli/config-store";
+import { deleteProfile, getActiveProfile, getConfigPath } from "../cli/config-store";
 import { useAppState } from "./hooks/use-app-state";
 import { Header } from "./components/header";
 import { RepoList } from "./components/repo-list";
@@ -19,6 +19,19 @@ interface AppProps {
 function App({ store, orchestrator }: AppProps) {
   const state = useAppState(store);
   const { exit } = useApp();
+
+  // Exit on fatal errors (invalid PAT, auth failures, etc.)
+  useEffect(() => {
+    const onFatal = () => {
+      setTimeout(() => {
+        exit();
+        process.exit(1);
+      }, 2000);
+    };
+    orchestrator.on("event", (event: { type: string }) => {
+      if (event.type === "fatal-error") onFatal();
+    });
+  }, [orchestrator, exit]);
 
   useInput((input) => {
     if (input === "q") {
@@ -40,14 +53,15 @@ function App({ store, orchestrator }: AppProps) {
       store.addLog("info", "Manual refresh triggered");
     }
     if (input === "c") {
-      const cleared = clearConfig();
+      const profile = getActiveProfile();
+      const cleared = deleteProfile(profile);
       if (cleared) {
         store.addLog(
           "info",
-          `Credentials cleared from ${getConfigPath()}. Relaunch to re-enter.`,
+          `Profile "${profile}" cleared from ${getConfigPath()}. Relaunch to re-enter.`,
         );
       } else {
-        store.addLog("warn", `No saved config found at ${getConfigPath()}`);
+        store.addLog("warn", `No saved config found for profile "${profile}"`);
       }
       orchestrator.stop();
       exit();

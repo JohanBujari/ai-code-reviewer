@@ -19,14 +19,9 @@ The watcher runs as a daemon, polls Azure DevOps for new PRs and new iterations 
 
 ### Setup
 
-```bash
-# 1. Copy the example config
-cp .env.example .env
+The CLI uses an interactive setup wizard — just run `axiom` and it will prompt you for everything. Configuration is saved to `~/.axiom/config.json` and reused on subsequent runs.
 
-# 2. Fill in your values
-```
-
-**.env configuration:**
+Alternatively, you can use a `.env` file or environment variables:
 
 ```bash
 # Azure DevOps
@@ -76,6 +71,9 @@ node dist/cli.mjs watch --interval 60
 # Custom state file location
 node dist/cli.mjs watch --state-file ./my-state.json
 
+# Use a specific profile
+node dist/cli.mjs watch --profile work
+
 # Or link globally
 npm link
 axiom watch
@@ -85,16 +83,64 @@ axiom watch
 
 ```bash
 node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123
+
+# With a specific profile
+node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123 --profile client-x
 ```
+
+### Configuration Profiles
+
+Axiom supports named profiles for managing multiple Azure DevOps organizations or different configurations. Each profile stores its own org, PAT, and watched repos, while AI provider settings are shared globally by default.
+
+```bash
+# Profile management
+axiom profile list              # List all profiles (* = active)
+axiom profile use <name>        # Switch active profile
+axiom profile delete <name>     # Delete a profile
+
+# Use a profile for a single command
+axiom watch --profile work
+axiom review <url> --profile client-x
+```
+
+On first run, the TUI prompts you to name your profile. On subsequent runs, you'll see a profile selector to pick an existing profile or create a new one.
+
+**Config file structure** (`~/.axiom/config.json`):
+
+```json
+{
+  "version": 2,
+  "activeProfile": "work",
+  "global": {
+    "AI_PROVIDER": "anthropic",
+    "ANTHROPIC_API_KEY": "sk-ant-..."
+  },
+  "profiles": {
+    "work": {
+      "AZURE_DEVOPS_ORG": "my-work-org",
+      "AZURE_DEVOPS_PAT": "pat-...",
+      "WATCH_REPOS": "ProjectA/id1/Repo1"
+    },
+    "client-x": {
+      "AZURE_DEVOPS_ORG": "client-x-org",
+      "AZURE_DEVOPS_PAT": "pat-...",
+      "AI_PROVIDER": "openai",
+      "OPENAI_API_KEY": "sk-..."
+    }
+  }
+}
+```
+
+AI keys live in `global` (shared across profiles). Any key can be overridden per-profile — for example, `client-x` above uses OpenAI instead of the global Anthropic default. Environment variables and `.env` always take highest priority.
 
 ### TUI Keyboard Shortcuts
 
-| Key | Action                           |
-| --- | -------------------------------- |
-| `q` | Quit                             |
-| `p` | Pause/resume polling             |
-| `r` | Force immediate refresh          |
-| `c` | Clear saved credentials and exit |
+| Key | Action |
+| --- | ------ |
+| `q` | Quit |
+| `p` | Pause/resume polling |
+| `r` | Force immediate refresh |
+| `c` | Clear active profile credentials and exit |
 
 ### TUI Display
 
@@ -291,30 +337,31 @@ ai: {
 | `customPrompt`    | `string`   | built-in  | Override the system prompt for the AI reviewer        |
 | `logger`          | `Logger`   | `console` | Custom logger implementing `{ info, warn, error }`    |
 
-## CLI Options (Watcher)
+## CLI Options
 
-| Option                 | Default                        | Description                        |
-| ---------------------- | ------------------------------ | ---------------------------------- |
-| `--no-tui`             | TUI enabled                    | Disable terminal UI, log to stdout |
-| `--interval <seconds>` | `30`                           | Poll interval in seconds           |
-| `--state-file <path>`  | `~/.axiom/pr-agent-state.json` | Path to state persistence file     |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-p, --profile <name>` | active profile | Use a specific configuration profile |
+| `--no-tui` | TUI enabled | Disable terminal UI, log to stdout |
+| `--interval <seconds>` | `30` | Poll interval in seconds (watch only) |
+| `--state-file <path>` | `~/.axiom/pr-agent-state.json` | Path to state persistence file (watch only) |
 
 ## Environment Variables (CLI)
 
-| Variable                   | Required        | Description                                   |
-| -------------------------- | --------------- | --------------------------------------------- |
-| `AZURE_DEVOPS_ORG`         | Yes             | Azure DevOps organization name                |
-| `AZURE_DEVOPS_PAT`         | Yes             | Personal access token                         |
-| `WATCH_REPOS`              | Yes             | Comma-separated repos: `project/repoId/name`  |
-| `AI_PROVIDER`              | Yes             | `openai`, `anthropic`, or `azure-openai`      |
-| `OPENAI_API_KEY`           | If openai       | OpenAI API key                                |
-| `OPENAI_MODEL`             | No              | Override model (default: `gpt-5.2`)           |
-| `ANTHROPIC_API_KEY`        | If anthropic    | Anthropic API key                             |
-| `ANTHROPIC_MODEL`          | No              | Override model (default: `claude-sonnet-4-5`) |
-| `AZURE_OPENAI_ENDPOINT`    | If azure-openai | Azure OpenAI endpoint URL                     |
-| `AZURE_OPENAI_API_KEY`     | If azure-openai | Azure OpenAI API key                          |
-| `AZURE_OPENAI_DEPLOYMENT`  | If azure-openai | Deployment name                               |
-| `AZURE_OPENAI_API_VERSION` | No              | API version (default: `2024-02-01`)           |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AZURE_DEVOPS_ORG` | Yes | Azure DevOps organization name |
+| `AZURE_DEVOPS_PAT` | Yes | Personal access token |
+| `AI_PROVIDER` | Yes | `openai`, `anthropic`, or `azure-openai` |
+| `OPENAI_API_KEY` | If openai | OpenAI API key |
+| `WATCH_REPOS` | Yes | Comma-separated repos: `project/repoId/name` |
+| `OPENAI_MODEL` | No | Override model (default: `gpt-5.2`) |
+| `ANTHROPIC_API_KEY` | If anthropic | Anthropic API key |
+| `ANTHROPIC_MODEL` | No | Override model (default: `claude-sonnet-4-5`) |
+| `AZURE_OPENAI_ENDPOINT` | If azure-openai | Azure OpenAI endpoint URL |
+| `AZURE_OPENAI_API_KEY` | If azure-openai | Azure OpenAI API key |
+| `AZURE_OPENAI_DEPLOYMENT` | If azure-openai | Deployment name |
+| `AZURE_OPENAI_API_VERSION` | No | API version (default: `2024-02-01`) |
 
 ## Azure DevOps Setup
 
@@ -406,7 +453,7 @@ src/
 ├── cli/                    # CLI entry point (axiom command)
 │   ├── index.ts            # Commander setup
 │   ├── env.ts              # .env loader + validation
-│   ├── config-store.ts     # Credential persistence (~/.axiom/config.json)
+│   ├── config-store.ts     # Profile-based config persistence (~/.axiom/config.json)
 │   ├── prompt.ts           # Non-TUI prompting primitives
 │   └── commands/
 │       ├── watch.ts        # axiom watch

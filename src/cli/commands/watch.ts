@@ -8,6 +8,7 @@ export async function watchCommand(options: {
   tui?: boolean;
   interval?: string;
   stateFile?: string;
+  profile?: string;
 }): Promise<void> {
   let config: WatcherEnvConfig;
   try {
@@ -82,6 +83,10 @@ export async function watchCommand(options: {
           break;
         case "poll-error":
           logger.error(`Poll error: ${event.error}`);
+          break;
+        case "fatal-error":
+          logger.error(`Fatal: ${event.error}`);
+          process.exit(1);
           break;
       }
     });
