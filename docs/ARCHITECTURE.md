@@ -42,7 +42,7 @@ flowchart TB
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         AI Code Reviewer (azure-devops-pr-reviewer)               │
+│                                    AI Code Reviewer (axiom)                        │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
                               ┌──────────────────┐
@@ -127,15 +127,15 @@ flowchart TB
 
 ## Component Responsibilities
 
-| Component | Role |
-|-----------|------|
-| **PrReviewer** | Orchestrates the full review: fetch → filter → AI → post. Handles webhook verification, deduplication. |
-| **AzureDevOpsClient** | All Azure DevOps API calls (PRs, iterations, file content, comments, status). |
-| **AiProvider** | Abstract interface; implementations for Azure OpenAI, OpenAI, Anthropic. |
-| **Poller** | (Watch mode) Periodically lists active PRs, detects new ones, enqueues for review. |
-| **ReviewQueue** | (Watch mode) Serializes review jobs, processes one at a time. |
-| **StateManager** | (Watch mode) Persists reviewed PR IDs to avoid re-reviewing. |
-| **TuiStore / TUI** | (Watch mode) Terminal UI showing repos, queue, logs, progress. |
+| Component             | Role                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| **PrReviewer**        | Orchestrates the full review: fetch → filter → AI → post. Handles webhook verification, deduplication. |
+| **AzureDevOpsClient** | All Azure DevOps API calls (PRs, iterations, file content, comments, status).                          |
+| **AiProvider**        | Abstract interface; implementations for Azure OpenAI, OpenAI, Anthropic.                               |
+| **Poller**            | (Watch mode) Periodically lists active PRs, detects new ones, enqueues for review.                     |
+| **ReviewQueue**       | (Watch mode) Serializes review jobs, processes one at a time.                                          |
+| **StateManager**      | (Watch mode) Persists reviewed PR IDs to avoid re-reviewing.                                           |
+| **TuiStore / TUI**    | (Watch mode) Terminal UI showing repos, queue, logs, progress.                                         |
 
 ## External Dependencies
 

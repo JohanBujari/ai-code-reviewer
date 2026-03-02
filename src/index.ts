@@ -1,5 +1,5 @@
-import type { PrReviewerOptions } from './config';
-import { PrReviewer } from './reviewer';
+import type { PrReviewerOptions } from "./config";
+import { PrReviewer } from "./reviewer";
 
 /** Create a configured PR reviewer instance */
 export function createPrReviewer(options: PrReviewerOptions): PrReviewer {
@@ -12,7 +12,7 @@ export function createPrReviewer(options: PrReviewerOptions): PrReviewer {
  * Usage:
  * ```ts
  * import express from 'express';
- * import { expressMiddleware } from 'azure-devops-pr-reviewer';
+ * import { expressMiddleware } from 'axiom';
  *
  * const app = express();
  * app.use('/api/pr-review', expressMiddleware({ ... }));
@@ -25,11 +25,11 @@ export function expressMiddleware(
 
   return (req: ExpressLikeRequest, res: ExpressLikeResponse) => {
     const authHeader =
-      req.headers['authorization'] ?? req.headers['Authorization'];
+      req.headers["authorization"] ?? req.headers["Authorization"];
     const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
 
     if (!reviewer.verifyWebhook(headerValue)) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
@@ -53,8 +53,14 @@ interface ExpressLikeResponse {
 }
 
 // Re-export types and classes for consumers
-export { PrReviewer } from './reviewer';
-export type { PrReviewerOptions, AiConfig, AzureOpenAiConfig, OpenAiConfig, AnthropicConfig } from './config';
+export { PrReviewer } from "./reviewer";
+export type {
+  PrReviewerOptions,
+  AiConfig,
+  AzureOpenAiConfig,
+  OpenAiConfig,
+  AnthropicConfig,
+} from "./config";
 export type {
   WebhookPayload,
   ReviewComment,
@@ -66,5 +72,5 @@ export type {
   PullRequestSummary,
   PrStatusState,
   Logger,
-} from './types';
-export { DEFAULTS, SKIP_PATTERNS } from './config';
+} from "./types";
+export { DEFAULTS, SKIP_PATTERNS } from "./config";

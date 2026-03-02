@@ -541,7 +541,7 @@ export class PrReviewer {
       `**Error:** ${message}`,
       "",
       "---",
-      "*Powered by azure-devops-pr-reviewer*",
+      "*Powered by axiom*",
     ].join("\n");
 
     try {

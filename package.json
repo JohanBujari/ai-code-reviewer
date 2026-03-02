@@ -1,5 +1,5 @@
 {
-  "name": "azure-devops-pr-reviewer",
+  "name": "axiom",
   "version": "1.1.0",
   "description": "AI-powered pull request reviewer for Azure DevOps. Supports Azure OpenAI, OpenAI, and Claude. Includes CLI watcher with TUI.",
   "main": "./dist/index.js",

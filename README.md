@@ -1,15 +1,16 @@
-# azure-devops-pr-reviewer
+# axiom
 
 AI-powered pull request reviewer for Azure DevOps. Supports **OpenAI**, **Claude (Anthropic)**, and **Azure OpenAI**.
 
 Two modes of operation:
+
 - **CLI Watcher** — long-running daemon that automatically detects and reviews PRs with a real-time terminal UI
 - **Library** — integrate into your own Express/Fastify/NestJS server via webhooks
 
 ## Installation
 
 ```bash
-npm install azure-devops-pr-reviewer
+npm install -g axiom
 ```
 
 ## CLI Watcher (Recommended)
@@ -43,6 +44,7 @@ OPENAI_API_KEY=sk-...
 ### Finding your repo details
 
 From the Azure DevOps URL:
+
 ```
 https://dev.azure.com/{org}/{project}/_git/{repoName}
 ```
@@ -51,6 +53,7 @@ Example: `https://dev.azure.com/atraxal/EasyHR/_git/EasyHR_frontend`
 → `WATCH_REPOS=EasyHR/EasyHR_frontend/EasyHR_frontend`
 
 Multiple repos:
+
 ```bash
 WATCH_REPOS=EasyHR/EasyHR_frontend/EasyHR_frontend,PGFlow/PGFlow/PGFlow
 ```
@@ -86,15 +89,16 @@ node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pul
 
 ### TUI Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `p` | Pause/resume polling |
+| Key | Action                  |
+| --- | ----------------------- |
+| `q` | Quit                    |
+| `p` | Pause/resume polling    |
 | `r` | Force immediate refresh |
 
 ### TUI Display
 
 The terminal UI shows:
+
 - **Header** — watching status, uptime, last poll time
 - **Repo List** — repositories being watched
 - **PR Queue** — pending, in-progress, and completed reviews
@@ -104,7 +108,8 @@ The terminal UI shows:
 
 ### State Persistence
 
-The watcher saves state to `pr-agent-state.json` (configurable) to:
+The watcher saves state to `~/.axiom/pr-agent-state.json` (configurable via `--state-file`) to:
+
 - Avoid re-reviewing PRs after restart
 - Track which iteration was last reviewed
 - Auto-cleanup entries older than 7 days
@@ -129,28 +134,28 @@ For integration into your own server — the library has zero production depende
 ### Express
 
 ```typescript
-import express from 'express';
-import { createPrReviewer } from 'azure-devops-pr-reviewer';
+import express from "express";
+import { createPrReviewer } from "axiom";
 
 const app = express();
 app.use(express.json());
 
 const reviewer = createPrReviewer({
   azureDevOps: {
-    org: 'my-org',
+    org: "my-org",
     pat: process.env.AZURE_DEVOPS_PAT!,
   },
   webhookSecret: process.env.WEBHOOK_SECRET!,
   ai: {
-    provider: 'anthropic',
+    provider: "anthropic",
     apiKey: process.env.ANTHROPIC_API_KEY!,
-    model: 'claude-sonnet-4-20250514', // optional, this is the default
+    model: "claude-sonnet-4-20250514", // optional, this is the default
   },
 });
 
-app.post('/api/pr-review/webhook', (req, res) => {
-  if (!reviewer.verifyWebhook(req.headers['authorization'])) {
-    return res.status(401).json({ error: 'Unauthorized' });
+app.post("/api/pr-review/webhook", (req, res) => {
+  if (!reviewer.verifyWebhook(req.headers["authorization"])) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   res.json({ received: true });
@@ -163,18 +168,18 @@ app.listen(3000);
 ### Express (Drop-in Middleware)
 
 ```typescript
-import express from 'express';
-import { expressMiddleware } from 'azure-devops-pr-reviewer';
+import express from "express";
+import { expressMiddleware } from "axiom";
 
 const app = express();
 app.use(express.json());
 
 app.post(
-  '/api/pr-review/webhook',
+  "/api/pr-review/webhook",
   expressMiddleware({
-    azureDevOps: { org: 'my-org', pat: process.env.AZURE_DEVOPS_PAT! },
+    azureDevOps: { org: "my-org", pat: process.env.AZURE_DEVOPS_PAT! },
     webhookSecret: process.env.WEBHOOK_SECRET!,
-    ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY! },
+    ai: { provider: "openai", apiKey: process.env.OPENAI_API_KEY! },
   }),
 );
 
@@ -184,19 +189,19 @@ app.listen(3000);
 ### Fastify
 
 ```typescript
-import Fastify from 'fastify';
-import { createPrReviewer } from 'azure-devops-pr-reviewer';
+import Fastify from "fastify";
+import { createPrReviewer } from "axiom";
 
 const fastify = Fastify();
 const reviewer = createPrReviewer({
-  azureDevOps: { org: 'my-org', pat: process.env.AZURE_DEVOPS_PAT! },
+  azureDevOps: { org: "my-org", pat: process.env.AZURE_DEVOPS_PAT! },
   webhookSecret: process.env.WEBHOOK_SECRET!,
-  ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY! },
+  ai: { provider: "openai", apiKey: process.env.OPENAI_API_KEY! },
 });
 
-fastify.post('/api/pr-review/webhook', async (request, reply) => {
-  if (!reviewer.verifyWebhook(request.headers['authorization'])) {
-    return reply.status(401).send({ error: 'Unauthorized' });
+fastify.post("/api/pr-review/webhook", async (request, reply) => {
+  if (!reviewer.verifyWebhook(request.headers["authorization"])) {
+    return reply.status(401).send({ error: "Unauthorized" });
   }
 
   reply.send({ received: true });
@@ -209,26 +214,26 @@ fastify.listen({ port: 3000 });
 ### NestJS
 
 ```typescript
-import { Controller, Post, Req, Res } from '@nestjs/common';
-import { createPrReviewer } from 'azure-devops-pr-reviewer';
+import { Controller, Post, Req, Res } from "@nestjs/common";
+import { createPrReviewer } from "axiom";
 
 const reviewer = createPrReviewer({
-  azureDevOps: { org: 'my-org', pat: process.env.AZURE_DEVOPS_PAT! },
+  azureDevOps: { org: "my-org", pat: process.env.AZURE_DEVOPS_PAT! },
   webhookSecret: process.env.WEBHOOK_SECRET!,
   ai: {
-    provider: 'azure-openai',
+    provider: "azure-openai",
     endpoint: process.env.AZURE_OPENAI_ENDPOINT!,
     apiKey: process.env.AZURE_OPENAI_API_KEY!,
-    deployment: 'gpt-4o',
+    deployment: "gpt-4o",
   },
 });
 
-@Controller('pr-review')
+@Controller("pr-review")
 export class PrReviewController {
-  @Post('webhook')
+  @Post("webhook")
   handleWebhook(@Req() req, @Res() res) {
-    if (!reviewer.verifyWebhook(req.headers['authorization'])) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    if (!reviewer.verifyWebhook(req.headers["authorization"])) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     res.json({ received: true });
@@ -273,42 +278,42 @@ ai: {
 
 ## Configuration Options (Library)
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `azureDevOps.org` | `string` | required | Azure DevOps organization name |
-| `azureDevOps.pat` | `string` | required | Personal access token with Code (Read/Write) scope |
-| `webhookSecret` | `string` | required | Shared secret for webhook authentication |
-| `ai` | `AiConfig` | required | AI provider configuration (see above) |
-| `maxFiles` | `number` | `30` | Maximum files to review per PR |
-| `maxDiffLength` | `number` | `10000` | Max characters per file before truncation |
-| `skipPatterns` | `RegExp[]` | built-in | Patterns for files to skip (lock files, images, etc.) |
-| `customPrompt` | `string` | built-in | Override the system prompt for the AI reviewer |
-| `logger` | `Logger` | `console` | Custom logger implementing `{ info, warn, error }` |
+| Option            | Type       | Default   | Description                                           |
+| ----------------- | ---------- | --------- | ----------------------------------------------------- |
+| `azureDevOps.org` | `string`   | required  | Azure DevOps organization name                        |
+| `azureDevOps.pat` | `string`   | required  | Personal access token with Code (Read/Write) scope    |
+| `webhookSecret`   | `string`   | required  | Shared secret for webhook authentication              |
+| `ai`              | `AiConfig` | required  | AI provider configuration (see above)                 |
+| `maxFiles`        | `number`   | `30`      | Maximum files to review per PR                        |
+| `maxDiffLength`   | `number`   | `10000`   | Max characters per file before truncation             |
+| `skipPatterns`    | `RegExp[]` | built-in  | Patterns for files to skip (lock files, images, etc.) |
+| `customPrompt`    | `string`   | built-in  | Override the system prompt for the AI reviewer        |
+| `logger`          | `Logger`   | `console` | Custom logger implementing `{ info, warn, error }`    |
 
 ## CLI Options (Watcher)
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--no-tui` | TUI enabled | Disable terminal UI, log to stdout |
-| `--interval <seconds>` | `30` | Poll interval in seconds |
-| `--state-file <path>` | `./pr-agent-state.json` | Path to state persistence file |
+| Option                 | Default                        | Description                        |
+| ---------------------- | ------------------------------ | ---------------------------------- |
+| `--no-tui`             | TUI enabled                    | Disable terminal UI, log to stdout |
+| `--interval <seconds>` | `30`                           | Poll interval in seconds           |
+| `--state-file <path>`  | `~/.axiom/pr-agent-state.json` | Path to state persistence file     |
 
 ## Environment Variables (CLI)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AZURE_DEVOPS_ORG` | Yes | Azure DevOps organization name |
-| `AZURE_DEVOPS_PAT` | Yes | Personal access token |
-| `WATCH_REPOS` | Yes | Comma-separated repos: `project/repoId/name` |
-| `AI_PROVIDER` | Yes | `openai`, `anthropic`, or `azure-openai` |
-| `OPENAI_API_KEY` | If openai | OpenAI API key |
-| `OPENAI_MODEL` | No | Override model (default: `gpt-5.2`) |
-| `ANTHROPIC_API_KEY` | If anthropic | Anthropic API key |
-| `ANTHROPIC_MODEL` | No | Override model (default: `claude-sonnet-4-20250514`) |
-| `AZURE_OPENAI_ENDPOINT` | If azure-openai | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_API_KEY` | If azure-openai | Azure OpenAI API key |
-| `AZURE_OPENAI_DEPLOYMENT` | If azure-openai | Deployment name |
-| `AZURE_OPENAI_API_VERSION` | No | API version (default: `2024-02-01`) |
+| Variable                   | Required        | Description                                          |
+| -------------------------- | --------------- | ---------------------------------------------------- |
+| `AZURE_DEVOPS_ORG`         | Yes             | Azure DevOps organization name                       |
+| `AZURE_DEVOPS_PAT`         | Yes             | Personal access token                                |
+| `WATCH_REPOS`              | Yes             | Comma-separated repos: `project/repoId/name`         |
+| `AI_PROVIDER`              | Yes             | `openai`, `anthropic`, or `azure-openai`             |
+| `OPENAI_API_KEY`           | If openai       | OpenAI API key                                       |
+| `OPENAI_MODEL`             | No              | Override model (default: `gpt-5.2`)                  |
+| `ANTHROPIC_API_KEY`        | If anthropic    | Anthropic API key                                    |
+| `ANTHROPIC_MODEL`          | No              | Override model (default: `claude-sonnet-4-20250514`) |
+| `AZURE_OPENAI_ENDPOINT`    | If azure-openai | Azure OpenAI endpoint URL                            |
+| `AZURE_OPENAI_API_KEY`     | If azure-openai | Azure OpenAI API key                                 |
+| `AZURE_OPENAI_DEPLOYMENT`  | If azure-openai | Deployment name                                      |
+| `AZURE_OPENAI_API_VERSION` | No              | API version (default: `2024-02-01`)                  |
 
 ## Azure DevOps Setup
 
@@ -332,6 +337,7 @@ ai: {
 ## What Gets Reviewed
 
 The reviewer focuses on:
+
 - **Bugs**: Logic errors, null/undefined issues, race conditions
 - **Security**: Injection vulnerabilities, auth issues, secrets exposure
 - **Performance**: N+1 queries, memory leaks, inefficient algorithms
@@ -381,11 +387,11 @@ Trigger reviews without webhooks or the watcher:
 
 ```typescript
 const result = await reviewer.reviewPullRequest(
-  'MyProject',     // Azure DevOps project name
-  'repo-guid',     // Repository ID
-  123,             // Pull request ID
-  'PR Title',      // Optional
-  'PR Description' // Optional
+  "MyProject", // Azure DevOps project name
+  "repo-guid", // Repository ID
+  123, // Pull request ID
+  "PR Title", // Optional
+  "PR Description", // Optional
 );
 
 console.log(result.summary);
