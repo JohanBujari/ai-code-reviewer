@@ -8,6 +8,7 @@ import {
   getActiveProfile,
   setActiveProfile,
   deleteProfile,
+  createProfile,
   getDefaultStatePath,
 } from "./config-store";
 
@@ -82,6 +83,20 @@ profileCmd
     }
     for (const p of profiles) {
       console.log(p === active ? `* ${p}` : `  ${p}`);
+    }
+  });
+
+profileCmd
+  .command('add <name>')
+  .description('Create a new profile')
+  .action((name) => {
+    try {
+      createProfile(name);
+      setActiveProfile(name);
+      console.log(`Created and switched to profile: ${name}`);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
     }
   });
 
