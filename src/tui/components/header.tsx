@@ -38,7 +38,7 @@ export function Header({ status, startedAt, lastPollAt }: HeaderProps) {
     <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
       <Box justifyContent="space-between">
         <Text bold color="cyan">
-          PR Agent Watcher
+          Axiom Watcher
         </Text>
         <Box gap={2}>
           <Text dimColor>Uptime: {formatUptime(Date.now() - startedAt)}</Text>
