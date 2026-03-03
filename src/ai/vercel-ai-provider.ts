@@ -45,7 +45,7 @@ export class VercelAiProvider implements AiProvider {
       prompt: userPrompt,
       tools,
       maxTokens: 16_384,
-      maxSteps: 10,
+      maxSteps: 15,
       onStepFinish({ toolCalls, finishReason }) {
         if (toolCalls.length > 0) {
           context.logger.info(

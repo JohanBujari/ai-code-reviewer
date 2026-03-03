@@ -9,7 +9,6 @@ import {
   getDefaultStatePath,
 } from "./config-store";
 import { promptForMissingVars } from "./prompt";
-import { getDefaultStatePath } from "./config-store";
 
 export const DEFAULT_STATE_FILE = getDefaultStatePath();
 

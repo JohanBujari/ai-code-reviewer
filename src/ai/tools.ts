@@ -2,6 +2,71 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { ReviewContext } from './provider';
 
+/** A single line from an annotated diff with its new-file line number */
+export interface AnnotatedDiffLine {
+  /** Line number in the new version of the file (null for deleted lines) */
+  newLine: number | null;
+  /** Line number in the old version of the file (null for added lines) */
+  oldLine: number | null;
+  type: 'added' | 'deleted' | 'context';
+  content: string;
+}
+
+/**
+ * Parse a unified diff and annotate each line with its actual file line numbers.
+ * This makes it trivial for the AI to map diff lines → new-file line numbers.
+ */
+export function annotateDiffWithLineNumbers(diff: string): {
+  lines: AnnotatedDiffLine[];
+  changedLines: { line: number; content: string }[];
+} {
+  const lines: AnnotatedDiffLine[] = [];
+  const changedLines: { line: number; content: string }[] = [];
+
+  let newLine = 0;
+  let oldLine = 0;
+
+  for (const rawLine of diff.split('\n')) {
+    // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+    const hunkMatch = rawLine.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+    if (hunkMatch) {
+      oldLine = parseInt(hunkMatch[1], 10);
+      newLine = parseInt(hunkMatch[2], 10);
+      continue;
+    }
+
+    // Skip diff metadata lines (---, +++, diff, index, etc.)
+    if (
+      rawLine.startsWith('---') ||
+      rawLine.startsWith('+++') ||
+      rawLine.startsWith('diff ') ||
+      rawLine.startsWith('index ') ||
+      rawLine.startsWith('\\')
+    ) {
+      continue;
+    }
+
+    if (rawLine.startsWith('+')) {
+      const content = rawLine.slice(1);
+      lines.push({ newLine, oldLine: null, type: 'added', content });
+      changedLines.push({ line: newLine, content });
+      newLine++;
+    } else if (rawLine.startsWith('-')) {
+      const content = rawLine.slice(1);
+      lines.push({ newLine: null, oldLine, type: 'deleted', content });
+      oldLine++;
+    } else if (newLine > 0) {
+      // Context line (unchanged)
+      const content = rawLine.startsWith(' ') ? rawLine.slice(1) : rawLine;
+      lines.push({ newLine, oldLine, type: 'context', content });
+      newLine++;
+      oldLine++;
+    }
+  }
+
+  return { lines, changedLines };
+}
+
 /** Key files that reveal project conventions and tech stack */
 const PROJECT_CONTEXT_FILES = [
   '/README.md',
@@ -113,11 +178,18 @@ export function createReviewTools(ctx: ReviewContext) {
         }
         const maxChars = 30_000;
         const truncated = change.content.length > maxChars;
+        const diffContent = truncated ? change.content.slice(0, maxChars) + '\n... (truncated)' : change.content;
+
+        // Annotate diff with new-file line numbers for accurate commenting
+        const { changedLines } = annotateDiffWithLineNumbers(change.content);
+
         return {
           filePath: change.filePath,
           changeType: change.changeType,
-          diff: truncated ? change.content.slice(0, maxChars) + '\n... (truncated)' : change.content,
+          diff: diffContent,
           truncated,
+          changedLines,
+          _hint: 'Use the "changedLines" array for accurate line numbers. Each entry has "line" (new-file line number) and "content". Use these line numbers in your comments.',
         };
       },
     }),
@@ -219,6 +291,61 @@ export function createReviewTools(ctx: ReviewContext) {
             author: c.author.name,
             date: c.committer.date,
           })),
+        };
+      },
+    }),
+
+    /**
+     * Fetch a specific line range from the new version of a file.
+     * Useful for understanding context around changed lines without
+     * fetching the entire file.
+     */
+    get_surrounding_context: tool({
+      description:
+        'Fetch a specific line range from the current (new) version of a file. ' +
+        'Use this to understand what surrounds a changed line — e.g. the function a change is inside, ' +
+        'nearby variable declarations, control flow, or error handling. ' +
+        'More efficient than get_file_content when you only need a small window of context.',
+      parameters: z.object({
+        filePath: z
+          .string()
+          .describe('Absolute path to the file in the repo, e.g. /src/utils/auth.ts'),
+        startLine: z
+          .number()
+          .describe('First line number to fetch (1-indexed)'),
+        endLine: z
+          .number()
+          .describe('Last line number to fetch (1-indexed, max 50 lines from startLine)'),
+      }),
+      execute: async ({ filePath, startLine, endLine }) => {
+        // Clamp the range to max 50 lines
+        const clampedEnd = Math.min(endLine, startLine + 49);
+        ctx.logger.info(`[tool] get_surrounding_context: ${filePath}:${startLine}-${clampedEnd}`);
+
+        const content = await ctx.devOps.getFileContent(
+          ctx.project,
+          ctx.repoId,
+          filePath,
+          ctx.commitId,
+        );
+        if (!content) {
+          return { error: `File not found or empty: ${filePath}` };
+        }
+
+        const allLines = content.split('\n');
+        const start = Math.max(1, startLine) - 1; // Convert to 0-indexed
+        const end = Math.min(clampedEnd, allLines.length);
+
+        const numberedLines = allLines
+          .slice(start, end)
+          .map((line, i) => `${start + i + 1}: ${line}`);
+
+        return {
+          filePath,
+          startLine: start + 1,
+          endLine: end,
+          totalFileLines: allLines.length,
+          lines: numberedLines.join('\n'),
         };
       },
     }),

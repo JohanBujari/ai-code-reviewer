@@ -43,10 +43,12 @@ export interface PrFileChange {
   content: string;
 }
 
-/** A single AI review comment targeting a specific file and line */
+/** A single AI review comment targeting a specific file and line (or line range) */
 export interface ReviewComment {
   filePath: string;
   lineNumber: number;
+  /** Optional end line for multi-line issues. When set, the comment highlights a range. */
+  endLineNumber?: number;
   severity: 'critical' | 'warning' | 'suggestion' | 'nitpick';
   message: string;
 }

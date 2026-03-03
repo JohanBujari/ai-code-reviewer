@@ -5,6 +5,7 @@ import { AzureDevOpsClient } from "./azure-devops/client";
 import type { AiProvider, ReviewContext } from "./ai/provider";
 import { SYSTEM_PROMPT } from "./ai/provider";
 import { VercelAiProvider } from "./ai/vercel-ai-provider";
+import { annotateDiffWithLineNumbers } from "./ai/tools";
 import type {
   Logger,
   PrFileChange,
@@ -257,6 +258,9 @@ export class PrReviewer {
     const chunks = this.chunkFiles(files);
     const allComments: ReviewComment[] = [];
 
+    // Build changed-lines index for validation
+    const changedLinesIndex = this.buildChangedLinesIndex(files);
+
     for (const chunk of chunks) {
       const userPrompt = this.buildUserPrompt(
         chunk,
@@ -273,7 +277,17 @@ export class PrReviewer {
       allComments.push(...result.comments);
     }
 
-    return { comments: allComments };
+    // Validate and snap comment line numbers to actual changed lines
+    const validatedComments = this.validateAndAdjustComments(
+      allComments,
+      changedLinesIndex,
+    );
+
+    this.logger.info(
+      `[review] ${allComments.length} raw comments → ${validatedComments.length} validated`,
+    );
+
+    return { comments: validatedComments };
   }
 
   /**
@@ -511,14 +525,17 @@ export class PrReviewer {
     comment: ReviewComment,
   ): Promise<void> {
     const emoji = SEVERITY_EMOJI[comment.severity] ?? "⚪";
-    const lineNumber = Math.max(comment.lineNumber, 1);
+    const startLine = Math.max(comment.lineNumber, 1);
+    const endLine = comment.endLineNumber
+      ? Math.max(comment.endLineNumber, startLine)
+      : startLine;
     const content = `${emoji} **${comment.severity.toUpperCase()}**: ${comment.message}`;
 
     try {
       await this.devOps.createCommentThread(project, repoId, prId, content, {
         filePath: comment.filePath,
-        rightFileStart: { line: lineNumber, offset: 1 },
-        rightFileEnd: { line: lineNumber, offset: 1 },
+        rightFileStart: { line: startLine, offset: 1 },
+        rightFileEnd: { line: endLine, offset: 1 },
       });
     } catch (error) {
       this.logger.warn(
@@ -552,6 +569,76 @@ export class PrReviewer {
         `Failed to post error comment on PR #${prId}: ${commentError}`,
       );
     }
+  }
+
+  // ── Comment Validation ────────────────────────────────────
+
+  /**
+   * Build an index of which lines in each file were actually added/modified.
+   * Uses the annotated diff parser to extract accurate new-file line numbers.
+   */
+  private buildChangedLinesIndex(
+    files: PrFileChange[],
+  ): Map<string, Set<number>> {
+    const index = new Map<string, Set<number>>();
+    for (const file of files) {
+      const { changedLines } = annotateDiffWithLineNumbers(file.content);
+      index.set(file.filePath, new Set(changedLines.map((cl) => cl.line)));
+    }
+    return index;
+  }
+
+  /**
+   * Validate AI comments against actual changed lines.
+   * - Snaps slightly misaligned comments (±3 lines) to the nearest changed line
+   * - Drops comments that reference lines far from any change
+   */
+  private validateAndAdjustComments(
+    comments: ReviewComment[],
+    changedLinesIndex: Map<string, Set<number>>,
+  ): ReviewComment[] {
+    const maxSnap = 3;
+    const validated: ReviewComment[] = [];
+
+    for (const comment of comments) {
+      const changedLines = changedLinesIndex.get(comment.filePath);
+      if (!changedLines || changedLines.size === 0) {
+        this.logger.warn(
+          `[validate] Dropping comment on ${comment.filePath}:${comment.lineNumber} — file not in changed lines index`,
+        );
+        continue;
+      }
+
+      // If the line is exactly on a changed line, keep it as-is
+      if (changedLines.has(comment.lineNumber)) {
+        validated.push(comment);
+        continue;
+      }
+
+      // Try to snap to the nearest changed line within ±maxSnap
+      let nearest: number | null = null;
+      let nearestDist = Infinity;
+      for (const line of changedLines) {
+        const dist = Math.abs(line - comment.lineNumber);
+        if (dist <= maxSnap && dist < nearestDist) {
+          nearest = line;
+          nearestDist = dist;
+        }
+      }
+
+      if (nearest !== null) {
+        this.logger.info(
+          `[validate] Snapped comment on ${comment.filePath}:${comment.lineNumber} → line ${nearest} (offset ${nearestDist})`,
+        );
+        validated.push({ ...comment, lineNumber: nearest });
+      } else {
+        this.logger.warn(
+          `[validate] Dropping comment on ${comment.filePath}:${comment.lineNumber} — not near any changed line`,
+        );
+      }
+    }
+
+    return validated;
   }
 
   // ── Deduplication ──────────────────────────────────────────
