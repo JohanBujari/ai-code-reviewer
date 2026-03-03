@@ -36,8 +36,12 @@ interface VarDef {
 }
 
 const COMMON_VARS: VarDef[] = [
-  { key: "AZURE_DEVOPS_ORG", label: "Azure DevOps Organization", type: "text" },
-  { key: "AZURE_DEVOPS_PAT", label: "Azure DevOps PAT", type: "secret" },
+  {
+    key: "PLATFORM",
+    label: "Platform",
+    type: "select",
+    choices: ["azure-devops"],
+  },
   {
     key: "AI_PROVIDER",
     label: "AI Provider",
@@ -45,6 +49,13 @@ const COMMON_VARS: VarDef[] = [
     choices: ["openai", "anthropic", "azure-openai"],
   },
 ];
+
+const PLATFORM_VARS: Record<string, VarDef[]> = {
+  "azure-devops": [
+    { key: "AZURE_DEVOPS_ORG", label: "Azure DevOps Organization", type: "text" },
+    { key: "AZURE_DEVOPS_PAT", label: "Azure DevOps PAT", type: "secret" },
+  ],
+};
 
 const PROVIDER_VARS: Record<string, VarDef[]> = {
   openai: [{ key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" }],
@@ -93,6 +104,12 @@ function detectMissingVars(
   for (const def of COMMON_VARS) {
     if (!lookup(def.key)) missing.push(def);
   }
+  const platform = lookup("PLATFORM");
+  if (platform) {
+    for (const def of PLATFORM_VARS[platform] ?? []) {
+      if (!lookup(def.key)) missing.push(def);
+    }
+  }
   const provider = lookup("AI_PROVIDER");
   if (provider) {
     for (const def of PROVIDER_VARS[provider] ?? []) {
@@ -119,6 +136,7 @@ function buildConfigFromEnv(
     return val;
   };
 
+  const platform = lookup("PLATFORM") ?? "azure-devops";
   const org = require("AZURE_DEVOPS_ORG");
   const pat = require("AZURE_DEVOPS_PAT");
   const provider = require("AI_PROVIDER") as
@@ -155,7 +173,7 @@ function buildConfigFromEnv(
       throw new Error(`Unsupported AI_PROVIDER: "${provider}"`);
   }
 
-  const base: BaseEnvConfig = { azureDevOps: { org, pat }, ai };
+  const base: BaseEnvConfig = { platform, azureDevOps: { org, pat }, ai };
   if (command === "review") return base;
 
   const reposRaw = require("WATCH_REPOS");
@@ -421,10 +439,13 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       }
 
       setIsEditOnly(true);
+      const platform =
+        preAnswers["PLATFORM"] ?? saved["PLATFORM"] ?? process.env["PLATFORM"];
       const provider =
         preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
       const allVars = [
         ...COMMON_VARS,
+        ...(platform ? (PLATFORM_VARS[platform] ?? []) : []),
         ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
         ...WATCH_VARS,
       ];
@@ -497,10 +518,13 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         if (value) preAnswers[key] = value;
       }
       setIsEditOnly(true);
+      const platform =
+        preAnswers["PLATFORM"] ?? saved["PLATFORM"] ?? process.env["PLATFORM"];
       const provider =
         preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
       const allVars = [
         ...COMMON_VARS,
+        ...(platform ? (PLATFORM_VARS[platform] ?? []) : []),
         ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
         ...WATCH_VARS,
       ];
@@ -521,6 +545,23 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       setConfigAnswers(updated);
 
       const nextIndex = configIndex + 1;
+
+      // Check if we need more platform-specific vars after PLATFORM is answered
+      if (currentVar.key === "PLATFORM") {
+        const platformVars = PLATFORM_VARS[value] ?? [];
+        const lookup = (key: string) => updated[key] ?? process.env[key];
+        const newMissing = platformVars.filter((def) => !lookup(def.key));
+        if (newMissing.length > 0) {
+          const updatedVars = [
+            ...missingVars.slice(0, nextIndex),
+            ...newMissing,
+            ...missingVars.slice(nextIndex),
+          ];
+          setMissingVars(updatedVars);
+          setConfigIndex(nextIndex);
+          return;
+        }
+      }
 
       // Check if we need more provider-specific vars after AI_PROVIDER is answered
       if (currentVar.key === "AI_PROVIDER") {
@@ -562,6 +603,17 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
     // Remove the previous answer so the user can re-enter it
     const updated = { ...configAnswers };
     delete updated[prevVar.key];
+
+    // If going back past PLATFORM, remove platform-specific vars that were dynamically inserted
+    if (prevVar.key === "PLATFORM") {
+      const oldPlatform = configAnswers["PLATFORM"];
+      if (oldPlatform) {
+        const platformVarKeys = (PLATFORM_VARS[oldPlatform] ?? []).map((v) => v.key);
+        const filtered = missingVars.filter((v) => !platformVarKeys.includes(v.key));
+        for (const k of platformVarKeys) delete updated[k];
+        setMissingVars(filtered);
+      }
+    }
 
     // If going back past AI_PROVIDER, remove provider-specific vars that were dynamically inserted
     if (prevVar.key === "AI_PROVIDER") {
@@ -631,6 +683,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
                 proceedWithProfile(command!, item.value);
               }
             }}
+            onBack={() => setPhase('menu')}
           />
         </Box>
       )}
@@ -643,6 +696,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           </Box>
           <TextInput
             label="Profile name"
+            onBack={() => setPhase('profile-select')}
             onSubmit={(name) => {
               try {
                 createProfile(name);
@@ -824,14 +878,19 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           {missingVars[configIndex] && (
             <Box marginTop={configIndex > 0 ? 1 : 0}>
               {missingVars[configIndex].type === "select" ? (
-                <SelectInput
-                  items={(missingVars[configIndex].choices ?? []).map((c) => ({
-                    label: c,
-                    value: c,
-                  }))}
-                  onSelect={(item) => handleConfigAnswer(item.value)}
-                  onBack={handleConfigBack}
-                />
+                <Box flexDirection="column">
+                  <Text color="#00d4ff" bold>
+                    {missingVars[configIndex].label}
+                  </Text>
+                  <SelectInput
+                    items={(missingVars[configIndex].choices ?? []).map((c) => ({
+                      label: c,
+                      value: c,
+                    }))}
+                    onSelect={(item) => handleConfigAnswer(item.value)}
+                    onBack={handleConfigBack}
+                  />
+                </Box>
               ) : (
                 <TextInput
                   key={missingVars[configIndex].key}

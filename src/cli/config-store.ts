@@ -30,6 +30,7 @@ const GLOBAL_KEYS = new Set([
 
 /** Resolved flat config — the public interface consumed by the rest of the app */
 export interface SavedConfig {
+  PLATFORM?: string;
   AZURE_DEVOPS_ORG?: string;
   AZURE_DEVOPS_PAT?: string;
   AI_PROVIDER?: string;

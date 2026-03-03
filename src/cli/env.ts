@@ -14,8 +14,9 @@ export const DEFAULT_STATE_FILE = getDefaultStatePath();
 
 // ── Types ────────────────────────────────────────────────
 
-/** Base config shared by all commands (org + pat + ai) */
+/** Base config shared by all commands (platform + org + pat + ai) */
 export interface BaseEnvConfig {
+  platform: string;
   azureDevOps: {
     org: string;
     pat: string;
@@ -63,7 +64,7 @@ function detectMissingVars(
 ): Set<string> {
   const missing = new Set<string>();
 
-  for (const key of ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT", "AI_PROVIDER"]) {
+  for (const key of ["PLATFORM", "AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT", "AI_PROVIDER"]) {
     if (!lookup(key)) missing.add(key);
   }
 
@@ -145,6 +146,7 @@ function buildConfig(
     return val;
   };
 
+  const platform = lookup("PLATFORM") ?? "azure-devops";
   const org = require("AZURE_DEVOPS_ORG");
   const pat = require("AZURE_DEVOPS_PAT");
   const provider = require("AI_PROVIDER") as
@@ -153,7 +155,7 @@ function buildConfig(
     | "azure-openai";
   const ai = buildAiConfig(provider, lookup, require);
 
-  const base: BaseEnvConfig = { azureDevOps: { org, pat }, ai };
+  const base: BaseEnvConfig = { platform, azureDevOps: { org, pat }, ai };
 
   if (command === "review") {
     return base;
