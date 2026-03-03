@@ -274,6 +274,8 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
   } | null>(null);
   const [manageProfileName, setManageProfileName] = useState<string | null>(null);
   const [manageMessage, setManageMessage] = useState<{ text: string; color: string } | null>(null);
+  const [isEditOnly, setIsEditOnly] = useState(false);
+  const [configOrigin, setConfigOrigin] = useState<Phase>("menu");
   // Handle q to exit on terminal phases, Esc to go back on info phases
   useInput((input, key) => {
     if (
@@ -384,10 +386,15 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
   );
 
   const finishConfig = useCallback(
-    (cmd: "watch" | "review", answers: Record<string, string>) => {
+    (cmd: "watch" | "review" | null, answers: Record<string, string>) => {
       mergeAndSaveConfig(answers, selectedProfile ?? undefined);
       for (const [key, value] of Object.entries(answers)) {
         process.env[key] = value;
+      }
+      if (isEditOnly) {
+        setIsEditOnly(false);
+        setPhase("menu");
+        return;
       }
       if (cmd === "watch") {
         launchWatch(answers);
@@ -399,11 +406,11 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         }
       }
     },
-    [selectedProfile, reviewUrl, launchWatch, startReview],
+    [selectedProfile, reviewUrl, launchWatch, startReview, isEditOnly],
   );
 
-  const proceedWithProfile = useCallback(
-    (cmd: "watch" | "review", profileName: string, forceEdit = false) => {
+  const editProfile = useCallback(
+    (profileName: string) => {
       setActiveProfile(profileName);
       setSelectedProfile(profileName);
 
@@ -413,19 +420,32 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         if (value) preAnswers[key] = value;
       }
 
-      if (forceEdit) {
-        // In edit mode, show ALL config vars so user can re-enter them
-        const provider = preAnswers["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
-        const allVars = [
-          ...COMMON_VARS,
-          ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
-          ...(cmd === "watch" ? WATCH_VARS : []),
-        ];
-        setMissingVars(allVars);
-        setConfigIndex(0);
-        setConfigAnswers({});
-        setPhase("config");
-        return;
+      setIsEditOnly(true);
+      const provider =
+        preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
+      const allVars = [
+        ...COMMON_VARS,
+        ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
+        ...WATCH_VARS,
+      ];
+      setMissingVars(allVars);
+      setConfigIndex(0);
+      setConfigAnswers({});
+      setConfigOrigin(manageProfileName ? "manage-profile-action" : "menu");
+      setPhase("config");
+    },
+    [manageProfileName],
+  );
+
+  const proceedWithProfile = useCallback(
+    (cmd: "watch" | "review", profileName: string) => {
+      setActiveProfile(profileName);
+      setSelectedProfile(profileName);
+
+      const saved = loadSavedConfig(profileName);
+      const preAnswers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(saved)) {
+        if (value) preAnswers[key] = value;
       }
 
       const missing = detectMissingVars(cmd, preAnswers, saved);
@@ -436,6 +456,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       setMissingVars(missing);
       setConfigIndex(0);
       setConfigAnswers(preAnswers);
+      setConfigOrigin("profile-select");
       setPhase("config");
     },
     [finishConfig],
@@ -447,13 +468,17 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       setCommand(cmd);
 
       if (initialProfile) {
-        proceedWithProfile(cmd, initialProfile, forceEdit);
+        if (forceEdit) {
+          editProfile(initialProfile);
+        } else {
+          proceedWithProfile(cmd, initialProfile);
+        }
         return;
       }
 
       setPhase("profile-select");
     },
-    [initialProfile, proceedWithProfile],
+    [initialProfile, proceedWithProfile, editProfile],
   );
 
   // ── Init: if a command was passed directly, skip menu ──
@@ -461,6 +486,29 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
     if (initialCommand) {
       dotenv.config();
       startConfig(initialCommand, editMode);
+    } else if (editMode && initialProfile) {
+      // profile edit mode — go directly to config without implying watch/review
+      dotenv.config();
+      setActiveProfile(initialProfile);
+      setSelectedProfile(initialProfile);
+      const saved = loadSavedConfig(initialProfile);
+      const preAnswers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(saved)) {
+        if (value) preAnswers[key] = value;
+      }
+      setIsEditOnly(true);
+      const provider =
+        preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
+      const allVars = [
+        ...COMMON_VARS,
+        ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
+        ...WATCH_VARS,
+      ];
+      setMissingVars(allVars);
+      setConfigIndex(0);
+      setConfigAnswers({});
+      setConfigOrigin("menu");
+      setPhase("config");
     }
   }, []);
 
@@ -504,8 +552,9 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
   const handleConfigBack = useCallback(() => {
     if (configIndex <= 0) {
-      // Already at first field — go back to menu
-      setPhase("menu");
+      // Already at first field — go back to wherever we came from
+      setIsEditOnly(false);
+      setPhase(configOrigin);
       return;
     }
     const prevIndex = configIndex - 1;
@@ -527,7 +576,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
     setConfigAnswers(updated);
     setConfigIndex(prevIndex);
-  }, [configIndex, missingVars, configAnswers]);
+  }, [configIndex, missingVars, configAnswers, configOrigin]);
 
   // ── Render ──
 
@@ -652,9 +701,8 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
             ]}
             onSelect={(item) => {
               if (item.value === 'edit') {
-                setCommand('watch');
                 dotenv.config();
-                proceedWithProfile('watch', manageProfileName, true);
+                editProfile(manageProfileName);
               } else if (item.value === 'delete') {
                 if (deleteProfile(manageProfileName)) {
                   setManageMessage({ text: `Deleted profile "${manageProfileName}"`, color: '#00ff88' });

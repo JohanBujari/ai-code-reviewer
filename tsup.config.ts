@@ -1,4 +1,7 @@
 import { defineConfig } from 'tsup';
+import pkg from './package.json';
+
+const versionDefine = { 'process.env.APP_VERSION': JSON.stringify(pkg.version) };
 
 export default defineConfig([
   // Library build (existing, unchanged)
@@ -9,6 +12,7 @@ export default defineConfig([
     clean: true,
     sourcemap: true,
     target: 'node18',
+    define: versionDefine,
   },
   // CLI build (ESM required — ink v5 is ESM-only)
   {
@@ -17,6 +21,7 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     target: 'node18',
+    define: versionDefine,
     external: [
       'ai',
       '@ai-sdk/openai',
