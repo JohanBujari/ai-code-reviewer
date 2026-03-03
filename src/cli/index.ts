@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name("axiom")
   .description("Axiom — AI-powered Azure DevOps PR reviewer")
-  .version("1.1.0")
+  .version("1.0.0")
   .option("-p, --profile <name>", "Use a specific configuration profile");
 
 // ── Watch command ──
@@ -111,6 +111,19 @@ profileCmd
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
     }
+  });
+
+profileCmd
+  .command('edit [name]')
+  .description('Edit profile credentials and settings')
+  .action((name) => {
+    const profile = name ?? program.opts().profile;
+    startCliApp({
+      command: "watch",
+      profile,
+      editMode: true,
+      options: {},
+    });
   });
 
 profileCmd

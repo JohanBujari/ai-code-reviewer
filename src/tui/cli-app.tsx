@@ -16,6 +16,7 @@ import {
   getActiveProfile,
   setActiveProfile,
   createProfile,
+  deleteProfile,
   profileExists,
   getDefaultStatePath,
 } from "../cli/config-store";
@@ -206,6 +207,18 @@ const MENU_ITEMS: SelectItem[] = [
     icon: "\u2691",
     description: "Paste an Azure DevOps PR URL",
   },
+  {
+    label: "Manage profiles",
+    value: "manage-profile",
+    icon: "\u2630",
+    description: "Edit or delete profiles",
+  },
+  {
+    label: "Setup guide",
+    value: "setup-guide",
+    icon: "\u2139",
+    description: "How to configure Azure DevOps",
+  },
   { label: "Exit", value: "exit", icon: "\u2715", description: "" },
 ];
 
@@ -215,6 +228,9 @@ type Phase =
   | "menu"
   | "profile-select"
   | "profile-name"
+  | "manage-profile"
+  | "manage-profile-action"
+  | "setup-guide"
   | "config"
   | "review-url"
   | "reviewing"
@@ -228,10 +244,11 @@ interface CliAppProps {
   initialCommand?: "watch" | "review";
   initialProfile?: string;
   reviewUrl?: string;
+  editMode?: boolean;
   options: { interval?: string; stateFile?: string };
 }
 
-function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppProps) {
+function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }: CliAppProps) {
   const { exit } = useApp();
 
   // State
@@ -255,13 +272,18 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
     project: string;
     repo: string;
   } | null>(null);
-  // Handle q to exit on terminal phases
-  useInput((input) => {
+  const [manageProfileName, setManageProfileName] = useState<string | null>(null);
+  const [manageMessage, setManageMessage] = useState<{ text: string; color: string } | null>(null);
+  // Handle q to exit on terminal phases, Esc to go back on info phases
+  useInput((input, key) => {
     if (
       (phase === "review-done" || phase === "review-error") &&
       input === "q"
     ) {
       exit();
+    }
+    if (phase === "setup-guide" && (key.escape || input === "q")) {
+      setPhase("menu");
     }
   });
 
@@ -381,7 +403,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
   );
 
   const proceedWithProfile = useCallback(
-    (cmd: "watch" | "review", profileName: string) => {
+    (cmd: "watch" | "review", profileName: string, forceEdit = false) => {
       setActiveProfile(profileName);
       setSelectedProfile(profileName);
 
@@ -390,6 +412,22 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
       for (const [key, value] of Object.entries(saved)) {
         if (value) preAnswers[key] = value;
       }
+
+      if (forceEdit) {
+        // In edit mode, show ALL config vars so user can re-enter them
+        const provider = preAnswers["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
+        const allVars = [
+          ...COMMON_VARS,
+          ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
+          ...(cmd === "watch" ? WATCH_VARS : []),
+        ];
+        setMissingVars(allVars);
+        setConfigIndex(0);
+        setConfigAnswers({});
+        setPhase("config");
+        return;
+      }
+
       const missing = detectMissingVars(cmd, preAnswers, saved);
       if (missing.length === 0) {
         finishConfig(cmd, preAnswers);
@@ -404,12 +442,12 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
   );
 
   const startConfig = useCallback(
-    (cmd: "watch" | "review") => {
+    (cmd: "watch" | "review", forceEdit = false) => {
       dotenv.config();
       setCommand(cmd);
 
       if (initialProfile) {
-        proceedWithProfile(cmd, initialProfile);
+        proceedWithProfile(cmd, initialProfile, forceEdit);
         return;
       }
 
@@ -422,7 +460,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
   useEffect(() => {
     if (initialCommand) {
       dotenv.config();
-      startConfig(initialCommand);
+      startConfig(initialCommand, editMode);
     }
   }, []);
 
@@ -464,6 +502,33 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
     [missingVars, configIndex, configAnswers, command, finishConfig],
   );
 
+  const handleConfigBack = useCallback(() => {
+    if (configIndex <= 0) {
+      // Already at first field — go back to menu
+      setPhase("menu");
+      return;
+    }
+    const prevIndex = configIndex - 1;
+    const prevVar = missingVars[prevIndex];
+    // Remove the previous answer so the user can re-enter it
+    const updated = { ...configAnswers };
+    delete updated[prevVar.key];
+
+    // If going back past AI_PROVIDER, remove provider-specific vars that were dynamically inserted
+    if (prevVar.key === "AI_PROVIDER") {
+      const oldProvider = configAnswers["AI_PROVIDER"];
+      if (oldProvider) {
+        const providerVarKeys = (PROVIDER_VARS[oldProvider] ?? []).map((v) => v.key);
+        const filtered = missingVars.filter((v) => !providerVarKeys.includes(v.key));
+        for (const k of providerVarKeys) delete updated[k];
+        setMissingVars(filtered);
+      }
+    }
+
+    setConfigAnswers(updated);
+    setConfigIndex(prevIndex);
+  }, [configIndex, missingVars, configAnswers]);
+
   // ── Render ──
 
   return (
@@ -478,6 +543,15 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
           onSelect={(item) => {
             if (item.value === "exit") {
               exit();
+              return;
+            }
+            if (item.value === "manage-profile") {
+              setManageMessage(null);
+              setPhase("manage-profile");
+              return;
+            }
+            if (item.value === "setup-guide") {
+              setPhase("setup-guide");
               return;
             }
             const cmd = item.value as "watch" | "review";
@@ -539,6 +613,132 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
         </Box>
       )}
 
+      {/* Phase: Manage profiles — select a profile */}
+      {phase === 'manage-profile' && (
+        <Box flexDirection="column" paddingX={1}>
+          <Box marginBottom={1}>
+            <Text color="#00d4ff" bold>{'\u2630'} Manage Profiles</Text>
+          </Box>
+          {manageMessage && (
+            <Box marginBottom={1}>
+              <Text color={manageMessage.color}>{manageMessage.text}</Text>
+            </Box>
+          )}
+          <SelectInput
+            items={listProfiles().map((p) => ({
+              label: p === getActiveProfile() ? `${p} (active)` : p,
+              value: p,
+            }))}
+            onSelect={(item) => {
+              setManageProfileName(item.value);
+              setPhase('manage-profile-action');
+            }}
+            onBack={() => setPhase('menu')}
+          />
+        </Box>
+      )}
+
+      {/* Phase: Manage profiles — choose action */}
+      {phase === 'manage-profile-action' && manageProfileName && (
+        <Box flexDirection="column" paddingX={1}>
+          <Box marginBottom={1} gap={1}>
+            <Text color="#00d4ff" bold>{'\u2630'}</Text>
+            <Text color="white" bold>{manageProfileName}</Text>
+          </Box>
+          <SelectInput
+            items={[
+              { label: 'Edit credentials', value: 'edit', icon: '\u270e', description: 'Re-enter keys and settings' },
+              { label: 'Delete profile', value: 'delete', icon: '\u2716', description: 'Remove this profile' },
+            ]}
+            onSelect={(item) => {
+              if (item.value === 'edit') {
+                setCommand('watch');
+                dotenv.config();
+                proceedWithProfile('watch', manageProfileName, true);
+              } else if (item.value === 'delete') {
+                if (deleteProfile(manageProfileName)) {
+                  setManageMessage({ text: `Deleted profile "${manageProfileName}"`, color: '#00ff88' });
+                } else {
+                  setManageMessage({ text: `Profile "${manageProfileName}" not found`, color: '#ff4444' });
+                }
+                setManageProfileName(null);
+                setPhase('manage-profile');
+              }
+            }}
+            onBack={() => setPhase('manage-profile')}
+          />
+        </Box>
+      )}
+
+      {/* Phase: Setup guide */}
+      {phase === 'setup-guide' && (
+        <Box flexDirection="column" paddingX={1}>
+          <Box borderStyle="round" borderColor="#00d4ff" paddingX={2} paddingY={1} flexDirection="column">
+            <Text color="#00d4ff" bold>{'\u2139'} Azure DevOps Setup Guide</Text>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text color="white" bold>1. Create a dedicated user (recommended)</Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Create a new user in Azure DevOps named "Axiom" (or similar).
+              </Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}This way, review comments will appear as coming from the Axiom
+              </Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}agent rather than your personal account.
+              </Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text color="white" bold>2. Generate a Personal Access Token (PAT)</Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Go to Azure DevOps {'\u2192'} User Settings {'\u2192'} Personal Access Tokens
+              </Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Create a new token with the following scopes:
+              </Text>
+              <Text color="#00d4ff">{"   "}{'\u2022'} Code (Read)</Text>
+              <Text color="#00d4ff">{"   "}{'\u2022'} Pull Request Threads (Read & Write)</Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text color="white" bold>3. Copy the PAT</Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Copy the generated token. You will need it when configuring Axiom.
+              </Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}The token is only shown once, so save it securely.
+              </Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text color="white" bold>4. Configure Axiom</Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Select "Watch repositories" or "Review a PR" from the main menu.
+              </Text>
+              <Text color="#aaaaaa" wrap="wrap">
+                {"   "}Enter your organization name, paste the PAT, and select an AI provider.
+              </Text>
+            </Box>
+
+            <Box marginTop={1} borderStyle="single" borderColor="#555555" paddingX={1}>
+              <Text color="#ffaa00">{'\u26a0'} </Text>
+              <Text color="#ffaa00" wrap="wrap">
+                You can use your own PAT instead, but comments on PRs will appear under your name.
+              </Text>
+            </Box>
+          </Box>
+
+          <Box marginTop={1} gap={2} paddingX={1}>
+            <Text color="#555555">Press</Text>
+            <Text color="#00d4ff" bold>esc</Text>
+            <Text color="#555555">or</Text>
+            <Text color="#00d4ff" bold>q</Text>
+            <Text color="#555555">to go back</Text>
+          </Box>
+        </Box>
+      )}
+
       {/* Phase: Config form */}
       {phase === "config" && missingVars.length > 0 && (
         <Box flexDirection="column" paddingX={1}>
@@ -582,13 +782,16 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, options }: CliAppPr
                     value: c,
                   }))}
                   onSelect={(item) => handleConfigAnswer(item.value)}
+                  onBack={handleConfigBack}
                 />
               ) : (
                 <TextInput
+                  key={missingVars[configIndex].key}
                   label={missingVars[configIndex].label}
                   hint={missingVars[configIndex].hint}
                   mask={missingVars[configIndex].type === "secret"}
                   onSubmit={handleConfigAnswer}
+                  onBack={handleConfigBack}
                 />
               )}
             </Box>
@@ -765,6 +968,7 @@ export function startCliApp(opts: {
   command?: "watch" | "review";
   reviewUrl?: string;
   profile?: string;
+  editMode?: boolean;
   options: { interval?: string; stateFile?: string };
 }): void {
   if (opts.profile && !profileExists(opts.profile)) {
@@ -781,6 +985,7 @@ export function startCliApp(opts: {
       initialCommand={opts.command}
       initialProfile={opts.profile}
       reviewUrl={opts.reviewUrl}
+      editMode={opts.editMode}
       options={opts.options}
     />,
   );

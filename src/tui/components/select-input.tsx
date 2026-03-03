@@ -11,13 +11,18 @@ export interface SelectItem {
 interface SelectInputProps {
   items: SelectItem[];
   onSelect: (item: SelectItem) => void;
+  onBack?: () => void;
   accentColor?: string;
 }
 
-export function SelectInput({ items, onSelect, accentColor = '#00d4ff' }: SelectInputProps) {
+export function SelectInput({ items, onSelect, onBack, accentColor = '#00d4ff' }: SelectInputProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   useInput((input, key) => {
+    if (key.escape && onBack) {
+      onBack();
+      return;
+    }
     if (items.length === 0) return;
     if (key.upArrow || input === 'k') {
       setActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
@@ -49,7 +54,7 @@ export function SelectInput({ items, onSelect, accentColor = '#00d4ff' }: Select
             </Text>
             {item.description && (
               <Text color={isActive ? '#666666' : '#444444'}>
-                {item.description}
+                - {item.description}
               </Text>
             )}
           </Box>
@@ -58,6 +63,7 @@ export function SelectInput({ items, onSelect, accentColor = '#00d4ff' }: Select
       <Box marginTop={1} gap={2}>
         <Text color="#555555">{'\u2191\u2193'} navigate</Text>
         <Text color="#555555">{'\u21b5'} select</Text>
+        {onBack && <Text color="#555555">esc back</Text>}
       </Box>
     </Box>
   );
