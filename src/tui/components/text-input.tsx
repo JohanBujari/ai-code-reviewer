@@ -6,10 +6,11 @@ interface TextInputProps {
   hint?: string;
   mask?: boolean;
   onSubmit: (value: string) => void;
+  onBack?: () => void;
   accentColor?: string;
 }
 
-export function TextInput({ label, hint, mask, onSubmit, accentColor = '#00d4ff' }: TextInputProps) {
+export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = '#00d4ff' }: TextInputProps) {
   const [value, setValue] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
 
@@ -28,6 +29,10 @@ export function TextInput({ label, hint, mask, onSubmit, accentColor = '#00d4ff'
     }
     if (key.backspace || key.delete) {
       setValue((prev) => prev.slice(0, -1));
+      return;
+    }
+    if (key.escape && onBack) {
+      onBack();
       return;
     }
     if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
@@ -53,7 +58,7 @@ export function TextInput({ label, hint, mask, onSubmit, accentColor = '#00d4ff'
         <Text color={accentColor}>{cursor}</Text>
       </Box>
       {value.length === 0 && (
-        <Text color="#444444">  Type your value and press Enter</Text>
+        <Text color="#444444">  Type your value and press Enter{onBack ? ' · Esc to go back' : ''}</Text>
       )}
     </Box>
   );

@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import { render, Box, useInput, useApp } from "ink";
 import type { WatcherOrchestrator } from "../watcher/orchestrator";
 import type { TuiStore } from "./store";
-import { deleteProfile, getActiveProfile, getConfigPath } from "../cli/config-store";
 import { useAppState } from "./hooks/use-app-state";
 import { Header } from "./components/header";
 import { RepoList } from "./components/repo-list";
@@ -54,20 +53,6 @@ function App({ store, orchestrator }: AppProps) {
     if (input === "r") {
       orchestrator.forcePoll();
       store.addLog("info", "Manual refresh triggered");
-    }
-    if (input === "c") {
-      const profile = getActiveProfile();
-      const cleared = deleteProfile(profile);
-      if (cleared) {
-        store.addLog(
-          "info",
-          `Profile "${profile}" cleared from ${getConfigPath()}. Relaunch to re-enter.`,
-        );
-      } else {
-        store.addLog("warn", `No saved config found for profile "${profile}"`);
-      }
-      orchestrator.stop();
-      exit();
     }
   });
 
