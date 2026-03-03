@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 export interface SelectItem {
@@ -17,6 +17,11 @@ interface SelectInputProps {
 
 export function SelectInput({ items, onSelect, onBack, accentColor = '#00d4ff' }: SelectInputProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // Reset selection when items change (e.g. after delete, or navigating back)
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [items.length]);
 
   useInput((input, key) => {
     if (key.escape && onBack) {

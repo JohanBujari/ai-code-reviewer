@@ -21,7 +21,7 @@ interface BannerProps {
   version?: string;
 }
 
-export function Banner({ version = "1.0.0" }: BannerProps) {
+export function Banner({ version = process.env.APP_VERSION ?? "0.0.0" }: BannerProps) {
   return (
     <Box
       flexDirection="column"
