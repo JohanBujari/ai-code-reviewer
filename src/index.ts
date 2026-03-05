@@ -35,8 +35,10 @@ export function expressMiddleware(
 
     res.status(200).json({ received: true });
 
-    // Fire-and-forget — errors are handled internally
-    reviewer.handleWebhook(req.body).catch(() => {});
+    // Fire-and-forget — log errors but don't crash the server
+    reviewer.handleWebhook(req.body).catch((err) => {
+      reviewer.logger.error(`Webhook handling failed: ${err}`);
+    });
   };
 }
 

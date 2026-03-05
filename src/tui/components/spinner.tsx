@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import { THEME } from '../../shared/theme';
 
 const FRAMES = ['\u2839', '\u2838', '\u2834', '\u2826', '\u2807', '\u280f', '\u2819', '\u2839'];
 const DOTS_FRAMES = ['.  ', '.. ', '...', '   '];
@@ -10,7 +11,7 @@ interface SpinnerProps {
   showDots?: boolean;
 }
 
-export function Spinner({ label, color = '#00d4ff', showDots = false }: SpinnerProps) {
+export function Spinner({ label, color = THEME.primary, showDots = false }: SpinnerProps) {
   const [frame, setFrame] = useState(0);
   const [dotFrame, setDotFrame] = useState(0);
 
@@ -33,7 +34,7 @@ export function Spinner({ label, color = '#00d4ff', showDots = false }: SpinnerP
     <Box gap={1}>
       <Text color={color} bold>{FRAMES[frame]}</Text>
       {label && <Text color="white">{label}</Text>}
-      {showDots && <Text color="#555555">{DOTS_FRAMES[dotFrame]}</Text>}
+      {showDots && <Text color={THEME.textDimmer}>{DOTS_FRAMES[dotFrame]}</Text>}
     </Box>
   );
 }

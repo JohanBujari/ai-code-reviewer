@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { THEME } from '../../shared/theme';
 
 interface TextInputProps {
   label: string;
@@ -10,7 +11,7 @@ interface TextInputProps {
   accentColor?: string;
 }
 
-export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = '#00d4ff' }: TextInputProps) {
+export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = THEME.primary }: TextInputProps) {
   const [value, setValue] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
 
@@ -50,7 +51,7 @@ export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = '
     <Box flexDirection="column" paddingX={1}>
       <Box gap={1}>
         <Text color={accentColor} bold>{label}</Text>
-        {hint && <Text color="#555555">({hint})</Text>}
+        {hint && <Text color={THEME.textDimmer}>({hint})</Text>}
       </Box>
       <Box gap={0} marginTop={0}>
         <Text color={accentColor}>{'\u276f'} </Text>
@@ -58,7 +59,7 @@ export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = '
         <Text color={accentColor}>{cursor}</Text>
       </Box>
       {value.length === 0 && (
-        <Text color="#444444">  Type your value and press Enter{onBack ? ' · Esc to go back' : ''}</Text>
+        <Text color={THEME.textDarkest}>  Type your value and press Enter{onBack ? ' · Esc to go back' : ''}</Text>
       )}
     </Box>
   );

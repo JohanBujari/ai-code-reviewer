@@ -67,24 +67,16 @@ export function annotateDiffWithLineNumbers(diff: string): {
   return { lines, changedLines };
 }
 
-/** Key files that reveal project conventions and tech stack */
-const PROJECT_CONTEXT_FILES = [
-  '/README.md',
-  '/package.json',
-  '/tsconfig.json',
-  '/pyproject.toml',
-  '/requirements.txt',
-  '/.eslintrc.json',
-  '/.eslintrc.js',
-  '/biome.json',
-  '/Cargo.toml',
-  '/go.mod',
-  '/pom.xml',
-  '/build.gradle',
-  '/Makefile',
-  '/Dockerfile',
-  '/docker-compose.yml',
-];
+import {
+  PROJECT_CONTEXT_FILES,
+  SKIP_DIRS,
+  MAX_TOOL_TREE_VIEW_ITEMS,
+  MAX_TOOL_CONFIG_FILE_CHARS,
+  MAX_TOOL_CONTENT_CHARS,
+  MAX_PR_THREADS_RETURNED,
+  MAX_FILE_HISTORY_COMMITS,
+  MAX_CONTEXT_LINES,
+} from '../shared/constants';
 
 /**
  * Create the set of tools the AI reviewer can use during a review.
@@ -114,14 +106,13 @@ export function createReviewTools(ctx: ReviewContext) {
         const tree = await ctx.devOps.getRepoTree(ctx.project, ctx.repoId, ctx.commitId, scopePath);
 
         // Build a compact tree view (skip noisy directories)
-        const skipDirs = ['/node_modules', '/dist', '/.git', '/vendor', '/__pycache__', '/build', '/.next'];
         const filteredTree = tree.filter(
-          (item) => !skipDirs.some((skip) => item.path.startsWith(skip) || item.path.includes(`${skip}/`)),
+          (item) => !SKIP_DIRS.some((skip) => item.path.startsWith(skip) || item.path.includes(`${skip}/`)),
         );
 
         // Limit to avoid huge outputs
         const treeView = filteredTree
-          .slice(0, 200)
+          .slice(0, MAX_TOOL_TREE_VIEW_ITEMS)
           .map((item) => (item.isFolder ? `${item.path}/` : item.path))
           .join('\n');
 
@@ -139,8 +130,8 @@ export function createReviewTools(ctx: ReviewContext) {
             );
             if (content) {
               // Truncate large files (e.g. big READMEs)
-              contextFiles[filePath] = content.length > 5_000
-                ? content.slice(0, 5_000) + '\n... (truncated)'
+              contextFiles[filePath] = content.length > MAX_TOOL_CONFIG_FILE_CHARS
+                ? content.slice(0, MAX_TOOL_CONFIG_FILE_CHARS) + '\n... (truncated)'
                 : content;
             }
           }
@@ -176,9 +167,8 @@ export function createReviewTools(ctx: ReviewContext) {
         if (!change) {
           return { error: `File not found in PR changes: ${filePath}. Use get_file_content to read files that were not changed.` };
         }
-        const maxChars = 30_000;
-        const truncated = change.content.length > maxChars;
-        const diffContent = truncated ? change.content.slice(0, maxChars) + '\n... (truncated)' : change.content;
+        const truncated = change.content.length > MAX_TOOL_CONTENT_CHARS;
+        const diffContent = truncated ? change.content.slice(0, MAX_TOOL_CONTENT_CHARS) + '\n... (truncated)' : change.content;
 
         // Annotate diff with new-file line numbers for accurate commenting
         const { changedLines } = annotateDiffWithLineNumbers(change.content);
@@ -221,11 +211,10 @@ export function createReviewTools(ctx: ReviewContext) {
         if (!content) {
           return { error: `File not found or empty: ${filePath}` };
         }
-        const maxChars = 30_000;
-        const truncated = content.length > maxChars;
+        const truncated = content.length > MAX_TOOL_CONTENT_CHARS;
         return {
           filePath,
-          content: truncated ? content.slice(0, maxChars) + '\n... (truncated)' : content,
+          content: truncated ? content.slice(0, MAX_TOOL_CONTENT_CHARS) + '\n... (truncated)' : content,
           truncated,
           totalLength: content.length,
         };
@@ -248,7 +237,7 @@ export function createReviewTools(ctx: ReviewContext) {
         // Return a simplified view to save tokens
         return {
           threadCount: threads.length,
-          threads: threads.slice(0, 20).map((t) => ({
+          threads: threads.slice(0, MAX_PR_THREADS_RETURNED).map((t) => ({
             id: t.id,
             status: t.status,
             firstComment: t.comments[0]?.content?.slice(0, 500) ?? '',
@@ -275,7 +264,7 @@ export function createReviewTools(ctx: ReviewContext) {
           .describe('Number of recent commits to return (max 10)'),
       }),
       execute: async ({ filePath, top = 5 }) => {
-        const limit = Math.min(top, 10);
+        const limit = Math.min(top, MAX_FILE_HISTORY_COMMITS);
         ctx.logger.info(`[tool] get_file_history: ${filePath} (last ${limit})`);
         const commits = await ctx.devOps.getFileCommits(
           ctx.project,
@@ -319,7 +308,7 @@ export function createReviewTools(ctx: ReviewContext) {
       }),
       execute: async ({ filePath, startLine, endLine }) => {
         // Clamp the range to max 50 lines
-        const clampedEnd = Math.min(endLine, startLine + 49);
+        const clampedEnd = Math.min(endLine, startLine + MAX_CONTEXT_LINES - 1);
         ctx.logger.info(`[tool] get_surrounding_context: ${filePath}:${startLine}-${clampedEnd}`);
 
         const content = await ctx.devOps.getFileContent(

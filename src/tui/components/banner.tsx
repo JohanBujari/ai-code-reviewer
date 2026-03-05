@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { THEME } from "../../shared/theme";
 
 const LOGO_LINES = [
   "     _          _                 ",
@@ -9,13 +10,7 @@ const LOGO_LINES = [
   " /_/   \\_\\/_/\\_\\_|\\___/|_| |_| |_|",
 ];
 
-const GRADIENT: string[] = [
-  "#00d4ff",
-  "#00b8e6",
-  "#009dcc",
-  "#0081b3",
-  "#006699",
-];
+const GRADIENT = [...THEME.bannerGradient];
 
 interface BannerProps {
   version?: string;
@@ -26,7 +21,7 @@ export function Banner({ version = process.env.APP_VERSION ?? "0.0.0" }: BannerP
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="#00d4ff"
+      borderColor={THEME.primary}
       paddingX={2}
       paddingY={1}
       marginBottom={1}
@@ -42,12 +37,12 @@ export function Banner({ version = process.env.APP_VERSION ?? "0.0.0" }: BannerP
 
       {/* Tagline */}
       <Box justifyContent="center" marginTop={1}>
-        <Text color="#888888">{"  "}~</Text>
+        <Text color={THEME.textSecondary}>{"  "}~</Text>
         <Text color="white" bold>
           {" "}
           AI-Powered Code Review{" "}
         </Text>
-        <Text color="#888888">~{"  "}</Text>
+        <Text color={THEME.textSecondary}>~{"  "}</Text>
       </Box>
 
       {/* Version + divider */}

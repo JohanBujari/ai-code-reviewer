@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { THEME } from '../../shared/theme';
 
 export interface SelectItem {
   label: string;
@@ -15,7 +16,7 @@ interface SelectInputProps {
   accentColor?: string;
 }
 
-export function SelectInput({ items, onSelect, onBack, accentColor = '#00d4ff' }: SelectInputProps) {
+export function SelectInput({ items, onSelect, onBack, accentColor = THEME.primary }: SelectInputProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   // Reset selection when items change (e.g. after delete, or navigating back)
@@ -46,19 +47,19 @@ export function SelectInput({ items, onSelect, onBack, accentColor = '#00d4ff' }
         const isActive = index === activeIndex;
         return (
           <Box key={item.value} gap={1}>
-            <Text color={isActive ? accentColor : '#555555'}>
+            <Text color={isActive ? accentColor : THEME.textDimmer}>
               {isActive ? '\u276f' : ' '}
             </Text>
             {item.icon && (
-              <Text color={isActive ? accentColor : '#888888'}>
+              <Text color={isActive ? accentColor : THEME.textSecondary}>
                 {item.icon}
               </Text>
             )}
-            <Text color={isActive ? 'white' : '#888888'} bold={isActive}>
+            <Text color={isActive ? 'white' : THEME.textSecondary} bold={isActive}>
               {item.label}
             </Text>
             {item.description && (
-              <Text color={isActive ? '#666666' : '#444444'}>
+              <Text color={isActive ? THEME.textMuted : THEME.textDarkest}>
                 - {item.description}
               </Text>
             )}
@@ -66,9 +67,9 @@ export function SelectInput({ items, onSelect, onBack, accentColor = '#00d4ff' }
         );
       })}
       <Box marginTop={1} gap={2}>
-        <Text color="#555555">{'\u2191\u2193'} navigate</Text>
-        <Text color="#555555">{'\u21b5'} select</Text>
-        {onBack && <Text color="#555555">esc back</Text>}
+        <Text color={THEME.textDimmer}>{'\u2191\u2193'} navigate</Text>
+        <Text color={THEME.textDimmer}>{'\u21b5'} select</Text>
+        {onBack && <Text color={THEME.textDimmer}>esc back</Text>}
       </Box>
     </Box>
   );

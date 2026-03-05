@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { THEME } from "../../shared/theme";
 
 interface StatusBarProps {
   errors: Array<{ timestamp: number; message: string }>;
@@ -8,11 +9,11 @@ interface StatusBarProps {
 function KeyBadge({ keyChar, label }: { keyChar: string; label: string }) {
   return (
     <Box gap={0}>
-      <Text color="#00d4ff" bold>
+      <Text color={THEME.primary} bold>
         {" "}
         {keyChar}{" "}
       </Text>
-      <Text color="#888888">{label}</Text>
+      <Text color={THEME.textSecondary}>{label}</Text>
     </Box>
   );
 }
@@ -24,15 +25,15 @@ export function StatusBar({ errors }: StatusBarProps) {
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="#333333"
+      borderColor={THEME.border}
       paddingX={1}
       marginTop={1}
     >
       <Box gap={2}>
         <KeyBadge keyChar="q" label="quit" />
-        <Text color="#333333">{"\u2502"}</Text>
+        <Text color={THEME.divider}>{"\u2502"}</Text>
         <KeyBadge keyChar="p" label="pause/resume" />
-        <Text color="#333333">{"\u2502"}</Text>
+        <Text color={THEME.divider}>{"\u2502"}</Text>
         <KeyBadge keyChar="r" label="refresh" />
       </Box>
       {lastError && (

@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { render, Box, Text, useApp, useInput } from "ink";
+import { useEffect, useCallback } from "react";
+import { render, Box, useApp, useInput } from "ink";
 import dotenv from "dotenv";
 import { Banner } from "./components/banner";
-import { SelectInput, type SelectItem } from "./components/select-input";
-import { TextInput } from "./components/text-input";
-import { Spinner } from "./components/spinner";
 import { TuiStore } from "./store";
 import { WatcherOrchestrator } from "../watcher/orchestrator";
 import { startTui } from "./app";
@@ -12,249 +9,42 @@ import { PrReviewer } from "../reviewer";
 import {
   loadSavedConfig,
   mergeAndSaveConfig,
-  listProfiles,
-  getActiveProfile,
   setActiveProfile,
   createProfile,
-  deleteProfile,
   profileExists,
-  getDefaultStatePath,
+  deleteProfile,
 } from "../cli/config-store";
 import type { BaseEnvConfig, WatcherEnvConfig } from "../cli/env";
-import type { AiConfig } from "../config";
-import type { WatchedRepo } from "../watcher/types";
-import type { ReviewResult, ReviewComment, Logger } from "../types";
+import type { Logger } from "../types";
+import { THEME } from "../shared/theme";
 
-// ── Config variable definitions ──
+import { useCliReducer } from "./hooks/use-cli-reducer";
+import { PR_URL_REGEX } from "./cli-constants";
+import {
+  detectMissingVars,
+  buildConfigFromEnv,
+  loadProfileAnswers,
+  buildAllVars,
+  PLATFORM_VARS,
+  PROVIDER_VARS,
+} from "./config-vars";
 
-interface VarDef {
-  key: string;
-  label: string;
-  type: "text" | "secret" | "select";
-  choices?: string[];
-  hint?: string;
-}
-
-const COMMON_VARS: VarDef[] = [
-  {
-    key: "PLATFORM",
-    label: "Platform",
-    type: "select",
-    choices: ["azure-devops"],
-  },
-  {
-    key: "AI_PROVIDER",
-    label: "AI Provider",
-    type: "select",
-    choices: ["openai", "anthropic", "azure-openai"],
-  },
-];
-
-const PLATFORM_VARS: Record<string, VarDef[]> = {
-  "azure-devops": [
-    { key: "AZURE_DEVOPS_ORG", label: "Azure DevOps Organization", type: "text" },
-    { key: "AZURE_DEVOPS_PAT", label: "Azure DevOps PAT", type: "secret" },
-  ],
-};
-
-const PROVIDER_VARS: Record<string, VarDef[]> = {
-  openai: [{ key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" }],
-  anthropic: [
-    { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "secret" },
-  ],
-  "azure-openai": [
-    {
-      key: "AZURE_OPENAI_ENDPOINT",
-      label: "Azure OpenAI Endpoint",
-      type: "text",
-      hint: "e.g. https://your-resource.openai.azure.com",
-    },
-    {
-      key: "AZURE_OPENAI_API_KEY",
-      label: "Azure OpenAI API Key",
-      type: "secret",
-    },
-    {
-      key: "AZURE_OPENAI_DEPLOYMENT",
-      label: "Azure OpenAI Deployment",
-      type: "text",
-    },
-  ],
-};
-
-const WATCH_VARS: VarDef[] = [
-  {
-    key: "WATCH_REPOS",
-    label: "Repos to watch",
-    type: "text",
-    hint: "comma-separated, format: project/repoId/repoName",
-  },
-];
-
-// ── Config helpers ──
-
-function detectMissingVars(
-  command: "watch" | "review",
-  answers: Record<string, string>,
-  saved: Record<string, string | undefined> = {},
-): VarDef[] {
-  const lookup = (key: string) =>
-    answers[key] ?? saved[key] ?? process.env[key];
-  const missing: VarDef[] = [];
-  for (const def of COMMON_VARS) {
-    if (!lookup(def.key)) missing.push(def);
-  }
-  const platform = lookup("PLATFORM");
-  if (platform) {
-    for (const def of PLATFORM_VARS[platform] ?? []) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  const provider = lookup("AI_PROVIDER");
-  if (provider) {
-    for (const def of PROVIDER_VARS[provider] ?? []) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  if (command === "watch") {
-    for (const def of WATCH_VARS) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  return missing;
-}
-
-function buildConfigFromEnv(
-  answers: Record<string, string>,
-  command: "watch" | "review",
-  options: { interval?: string; stateFile?: string },
-): WatcherEnvConfig | BaseEnvConfig {
-  const lookup = (key: string) => answers[key] ?? process.env[key];
-  const require = (key: string): string => {
-    const val = lookup(key);
-    if (!val) throw new Error(`Missing required configuration: ${key}`);
-    return val;
-  };
-
-  const platform = lookup("PLATFORM") ?? "azure-devops";
-  const org = require("AZURE_DEVOPS_ORG");
-  const pat = require("AZURE_DEVOPS_PAT");
-  const provider = require("AI_PROVIDER") as
-    | "openai"
-    | "anthropic"
-    | "azure-openai";
-
-  let ai: AiConfig;
-  switch (provider) {
-    case "openai":
-      ai = {
-        provider: "openai",
-        apiKey: require("OPENAI_API_KEY"),
-        model: lookup("OPENAI_MODEL"),
-      };
-      break;
-    case "anthropic":
-      ai = {
-        provider: "anthropic",
-        apiKey: require("ANTHROPIC_API_KEY"),
-        model: lookup("ANTHROPIC_MODEL"),
-      };
-      break;
-    case "azure-openai":
-      ai = {
-        provider: "azure-openai",
-        endpoint: require("AZURE_OPENAI_ENDPOINT"),
-        apiKey: require("AZURE_OPENAI_API_KEY"),
-        deployment: require("AZURE_OPENAI_DEPLOYMENT"),
-        apiVersion: lookup("AZURE_OPENAI_API_VERSION"),
-      };
-      break;
-    default:
-      throw new Error(`Unsupported AI_PROVIDER: "${provider}"`);
-  }
-
-  const base: BaseEnvConfig = { platform, azureDevOps: { org, pat }, ai };
-  if (command === "review") return base;
-
-  const reposRaw = require("WATCH_REPOS");
-  const repos: WatchedRepo[] = reposRaw.split(",").map((entry) => {
-    const parts = entry.trim().split("/");
-    if (parts.length < 2)
-      throw new Error(`Invalid WATCH_REPOS entry: "${entry}"`);
-    return {
-      project: parts[0],
-      repoId: parts[1],
-      repoName: parts[2] ?? parts[1],
-    };
-  });
-
-  return {
-    ...base,
-    repos,
-    pollIntervalMs: parseInt(options.interval ?? "30", 10) * 1000,
-    stateFilePath: options.stateFile ?? getDefaultStatePath(),
-  };
-}
-
-// ── Review helpers ──
-
-const PR_URL_REGEX =
-  /https:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/;
-const SEVERITY_CONFIG: Record<
-  string,
-  { color: string; icon: string; label: string }
-> = {
-  critical: { color: "#ff4444", icon: "\u26a0", label: "CRITICAL" },
-  warning: { color: "#ffaa00", icon: "\u25cf", label: "WARNING" },
-  suggestion: { color: "#00aaff", icon: "\u25cb", label: "SUGGEST" },
-  nitpick: { color: "#666666", icon: "\u00b7", label: "NITPICK" },
-};
-
-// ── Menu items ──
-
-const MENU_ITEMS: SelectItem[] = [
-  {
-    label: "Watch repositories",
-    value: "watch",
-    icon: "\u25b6",
-    description: "Monitor repos for new PRs",
-  },
-  {
-    label: "Review a PR",
-    value: "review",
-    icon: "\u2691",
-    description: "Paste an Azure DevOps PR URL",
-  },
-  {
-    label: "Manage profiles",
-    value: "manage-profile",
-    icon: "\u2630",
-    description: "Edit or delete profiles",
-  },
-  {
-    label: "Setup guide",
-    value: "setup-guide",
-    icon: "\u2139",
-    description: "How to configure Azure DevOps",
-  },
-  { label: "Exit", value: "exit", icon: "\u2715", description: "" },
-];
-
-// ── Phases ──
-
-type Phase =
-  | "menu"
-  | "profile-select"
-  | "profile-name"
-  | "manage-profile"
-  | "manage-profile-action"
-  | "setup-guide"
-  | "config"
-  | "review-url"
-  | "reviewing"
-  | "review-done"
-  | "review-error"
-  | "launching-watch";
+import { MenuPhase } from "./phases/menu-phase";
+import {
+  ProfileSelectPhase,
+  ProfileNamePhase,
+  ManageProfilePhase,
+  ManageProfileActionPhase,
+} from "./phases/profile-phase";
+import { SetupGuidePhase } from "./phases/setup-guide-phase";
+import { ConfigPhase } from "./phases/config-phase";
+import {
+  ReviewUrlPhase,
+  ReviewingPhase,
+  ReviewDonePhase,
+  ReviewErrorPhase,
+} from "./phases/review-phase";
+import { LaunchingPhase } from "./phases/launching-phase";
 
 // ── Single-screen App ──
 
@@ -268,42 +58,18 @@ interface CliAppProps {
 
 function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }: CliAppProps) {
   const { exit } = useApp();
+  const [state, dispatch] = useCliReducer({
+    command: initialCommand ?? null,
+    selectedProfile: initialProfile ?? null,
+  });
 
-  // State
-  const [phase, setPhase] = useState<Phase>("menu");
-  const [command, setCommand] = useState<"watch" | "review" | null>(
-    initialCommand ?? null,
-  );
-  const [selectedProfile, setSelectedProfile] = useState<string | null>(
-    initialProfile ?? null,
-  );
-  const [configAnswers, setConfigAnswers] = useState<Record<string, string>>(
-    {},
-  );
-  const [missingVars, setMissingVars] = useState<VarDef[]>([]);
-  const [configIndex, setConfigIndex] = useState(0);
-  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
-  const [reviewError, setReviewError] = useState("");
-  const [reviewStatus, setReviewStatus] = useState("Starting review...");
-  const [prInfo, setPrInfo] = useState<{
-    prId: number;
-    project: string;
-    repo: string;
-  } | null>(null);
-  const [manageProfileName, setManageProfileName] = useState<string | null>(null);
-  const [manageMessage, setManageMessage] = useState<{ text: string; color: string } | null>(null);
-  const [isEditOnly, setIsEditOnly] = useState(false);
-  const [configOrigin, setConfigOrigin] = useState<Phase>("menu");
   // Handle q to exit on terminal phases, Esc to go back on info phases
   useInput((input, key) => {
-    if (
-      (phase === "review-done" || phase === "review-error") &&
-      input === "q"
-    ) {
+    if ((state.phase === "review-done" || state.phase === "review-error") && input === "q") {
       exit();
     }
-    if (phase === "setup-guide" && (key.escape || input === "q")) {
-      setPhase("menu");
+    if (state.phase === "setup-guide" && (key.escape || input === "q")) {
+      dispatch({ type: "SET_PHASE", phase: "menu" });
     }
   });
 
@@ -311,13 +77,9 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
   const launchWatch = useCallback(
     (answers: Record<string, string>) => {
-      setPhase("launching-watch");
+      dispatch({ type: "SET_PHASE", phase: "launching-watch" });
       try {
-        const config = buildConfigFromEnv(
-          answers,
-          "watch",
-          options,
-        ) as WatcherEnvConfig;
+        const config = buildConfigFromEnv(answers, "watch", options) as WatcherEnvConfig;
         const store = new TuiStore(config.repos);
         const logger: Logger = {
           info: (msg) => store.addLog("info", msg),
@@ -344,10 +106,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           orchestrator.start();
         }, 100);
       } catch (err) {
-        console.error(
-          "Configuration error:",
-          err instanceof Error ? err.message : err,
-        );
+        console.error("Configuration error:", err instanceof Error ? err.message : err);
         exit();
       }
     },
@@ -358,29 +117,23 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
     async (prUrl: string, answers: Record<string, string> = {}) => {
       const match = prUrl.match(PR_URL_REGEX);
       if (!match) {
-        setReviewError(
-          "Invalid Azure DevOps PR URL. Expected: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}",
-        );
-        setPhase("review-error");
+        dispatch({
+          type: "REVIEW_ERROR",
+          error: "Invalid Azure DevOps PR URL. Expected: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}",
+        });
         return;
       }
 
       const [, , project, repoSlug, prIdStr] = match;
       const prId = parseInt(prIdStr, 10);
-      setPrInfo({ prId, project, repo: repoSlug });
-      setPhase("reviewing");
-      setReviewStatus(`Reviewing PR #${prId} in ${project}/${repoSlug}...`);
+      dispatch({ type: "REVIEW_STARTED", prInfo: { prId, project, repo: repoSlug } });
 
       try {
-        const config = buildConfigFromEnv(
-          answers,
-          "review",
-          options,
-        ) as BaseEnvConfig;
+        const config = buildConfigFromEnv(answers, "review", options) as BaseEnvConfig;
         const logger: Logger = {
-          info: (msg) => setReviewStatus(msg),
-          warn: (msg) => setReviewStatus(msg),
-          error: (msg) => setReviewStatus(msg),
+          info: (msg) => dispatch({ type: "SET_REVIEW_STATUS", status: msg }),
+          warn: (msg) => dispatch({ type: "SET_REVIEW_STATUS", status: msg }),
+          error: (msg) => dispatch({ type: "SET_REVIEW_STATUS", status: msg }),
         };
         const reviewer = new PrReviewer({
           azureDevOps: config.azureDevOps,
@@ -388,16 +141,10 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           ai: config.ai,
           logger,
         });
-        const result = await reviewer.reviewPullRequest(
-          project,
-          repoSlug,
-          prId,
-        );
-        setReviewResult(result);
-        setPhase("review-done");
+        const result = await reviewer.reviewPullRequest(project, repoSlug, prId);
+        dispatch({ type: "REVIEW_COMPLETE", result });
       } catch (err) {
-        setReviewError(err instanceof Error ? err.message : String(err));
-        setPhase("review-error");
+        dispatch({ type: "REVIEW_ERROR", error: err instanceof Error ? err.message : String(err) });
       }
     },
     [options],
@@ -405,13 +152,15 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
   const finishConfig = useCallback(
     (cmd: "watch" | "review" | null, answers: Record<string, string>) => {
-      mergeAndSaveConfig(answers, selectedProfile ?? undefined);
+      mergeAndSaveConfig(answers, state.selectedProfile ?? undefined);
       for (const [key, value] of Object.entries(answers)) {
         process.env[key] = value;
       }
-      if (isEditOnly) {
-        setIsEditOnly(false);
-        setPhase("menu");
+      if (state.isEditOnly) {
+        dispatch({ type: "BATCH", actions: [
+          { type: "SET_EDIT_ONLY", isEditOnly: false },
+          { type: "SET_PHASE", phase: "menu" },
+        ]});
         return;
       }
       if (cmd === "watch") {
@@ -420,65 +169,49 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         if (reviewUrl) {
           startReview(reviewUrl, answers);
         } else {
-          setPhase("review-url");
+          dispatch({ type: "SET_PHASE", phase: "review-url" });
         }
       }
     },
-    [selectedProfile, reviewUrl, launchWatch, startReview, isEditOnly],
+    [state.selectedProfile, state.isEditOnly, reviewUrl, launchWatch, startReview],
   );
 
   const editProfile = useCallback(
     (profileName: string) => {
       setActiveProfile(profileName);
-      setSelectedProfile(profileName);
+      dispatch({ type: "SELECT_PROFILE", profile: profileName });
 
       const saved = loadSavedConfig(profileName);
-      const preAnswers: Record<string, string> = {};
-      for (const [key, value] of Object.entries(saved)) {
-        if (value) preAnswers[key] = value;
-      }
-
-      setIsEditOnly(true);
-      const platform =
-        preAnswers["PLATFORM"] ?? saved["PLATFORM"] ?? process.env["PLATFORM"];
-      const provider =
-        preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
-      const allVars = [
-        ...COMMON_VARS,
-        ...(platform ? (PLATFORM_VARS[platform] ?? []) : []),
-        ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
-        ...WATCH_VARS,
-      ];
-      setMissingVars(allVars);
-      setConfigIndex(0);
-      setConfigAnswers({});
-      setConfigOrigin(manageProfileName ? "manage-profile-action" : "menu");
-      setPhase("config");
+      const preAnswers = loadProfileAnswers(saved);
+      dispatch({
+        type: "START_CONFIG",
+        vars: buildAllVars(preAnswers, saved),
+        answers: {},
+        origin: state.manageProfileName ? "manage-profile-action" : "menu",
+        isEditOnly: true,
+      });
     },
-    [manageProfileName],
+    [state.manageProfileName],
   );
 
   const proceedWithProfile = useCallback(
     (cmd: "watch" | "review", profileName: string) => {
       setActiveProfile(profileName);
-      setSelectedProfile(profileName);
+      dispatch({ type: "SELECT_PROFILE", profile: profileName });
 
       const saved = loadSavedConfig(profileName);
-      const preAnswers: Record<string, string> = {};
-      for (const [key, value] of Object.entries(saved)) {
-        if (value) preAnswers[key] = value;
-      }
-
+      const preAnswers = loadProfileAnswers(saved);
       const missing = detectMissingVars(cmd, preAnswers, saved);
       if (missing.length === 0) {
         finishConfig(cmd, preAnswers);
         return;
       }
-      setMissingVars(missing);
-      setConfigIndex(0);
-      setConfigAnswers(preAnswers);
-      setConfigOrigin("profile-select");
-      setPhase("config");
+      dispatch({
+        type: "START_CONFIG",
+        vars: missing,
+        answers: preAnswers,
+        origin: "profile-select",
+      });
     },
     [finishConfig],
   );
@@ -486,7 +219,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
   const startConfig = useCallback(
     (cmd: "watch" | "review", forceEdit = false) => {
       dotenv.config();
-      setCommand(cmd);
+      dispatch({ type: "SET_COMMAND", command: cmd });
 
       if (initialProfile) {
         if (forceEdit) {
@@ -497,7 +230,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         return;
       }
 
-      setPhase("profile-select");
+      dispatch({ type: "SET_PHASE", phase: "profile-select" });
     },
     [initialProfile, proceedWithProfile, editProfile],
   );
@@ -508,563 +241,187 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       dotenv.config();
       startConfig(initialCommand, editMode);
     } else if (editMode && initialProfile) {
-      // profile edit mode — go directly to config without implying watch/review
       dotenv.config();
       setActiveProfile(initialProfile);
-      setSelectedProfile(initialProfile);
+      dispatch({ type: "SELECT_PROFILE", profile: initialProfile });
       const saved = loadSavedConfig(initialProfile);
-      const preAnswers: Record<string, string> = {};
-      for (const [key, value] of Object.entries(saved)) {
-        if (value) preAnswers[key] = value;
-      }
-      setIsEditOnly(true);
-      const platform =
-        preAnswers["PLATFORM"] ?? saved["PLATFORM"] ?? process.env["PLATFORM"];
-      const provider =
-        preAnswers["AI_PROVIDER"] ?? saved["AI_PROVIDER"] ?? process.env["AI_PROVIDER"];
-      const allVars = [
-        ...COMMON_VARS,
-        ...(platform ? (PLATFORM_VARS[platform] ?? []) : []),
-        ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
-        ...WATCH_VARS,
-      ];
-      setMissingVars(allVars);
-      setConfigIndex(0);
-      setConfigAnswers({});
-      setConfigOrigin("menu");
-      setPhase("config");
+      const preAnswers = loadProfileAnswers(saved);
+      dispatch({
+        type: "START_CONFIG",
+        vars: buildAllVars(preAnswers, saved),
+        answers: {},
+        origin: "menu",
+        isEditOnly: true,
+      });
     }
   }, []);
 
-  // ── Config: handle when all vars are answered ──
-
+  // ── Config: handle when a var is answered ──
   const handleConfigAnswer = useCallback(
     (value: string) => {
-      const currentVar = missingVars[configIndex];
-      const updated = { ...configAnswers, [currentVar.key]: value };
-      setConfigAnswers(updated);
+      const currentVar = state.missingVars[state.configIndex];
+      const updated = { ...state.configAnswers, [currentVar.key]: value };
+      const nextIndex = state.configIndex + 1;
 
-      const nextIndex = configIndex + 1;
-
-      // Check if we need more platform-specific vars after PLATFORM is answered
-      if (currentVar.key === "PLATFORM") {
-        const platformVars = PLATFORM_VARS[value] ?? [];
+      // Check if we need more platform/provider-specific vars
+      if (currentVar.key === "PLATFORM" || currentVar.key === "AI_PROVIDER") {
+        const varMap = currentVar.key === "PLATFORM" ? PLATFORM_VARS : PROVIDER_VARS;
+        const specificVars = varMap[value] ?? [];
         const lookup = (key: string) => updated[key] ?? process.env[key];
-        const newMissing = platformVars.filter((def) => !lookup(def.key));
+        const newMissing = specificVars.filter((def) => !lookup(def.key));
         if (newMissing.length > 0) {
           const updatedVars = [
-            ...missingVars.slice(0, nextIndex),
+            ...state.missingVars.slice(0, nextIndex),
             ...newMissing,
-            ...missingVars.slice(nextIndex),
+            ...state.missingVars.slice(nextIndex),
           ];
-          setMissingVars(updatedVars);
-          setConfigIndex(nextIndex);
+          dispatch({ type: "SET_CONFIG_ANSWERS", answers: updated });
+          dispatch({ type: "SET_MISSING_VARS", vars: updatedVars });
+          dispatch({ type: "SET_CONFIG_INDEX", index: nextIndex });
           return;
         }
       }
 
-      // Check if we need more provider-specific vars after AI_PROVIDER is answered
-      if (currentVar.key === "AI_PROVIDER") {
-        const providerVars = PROVIDER_VARS[value] ?? [];
-        const lookup = (key: string) => updated[key] ?? process.env[key];
-        const newMissing = providerVars.filter((def) => !lookup(def.key));
-        if (newMissing.length > 0) {
-          // Insert provider vars (e.g. API key) after AI_PROVIDER, before WATCH_REPOS
-          const updatedVars = [
-            ...missingVars.slice(0, nextIndex),
-            ...newMissing,
-            ...missingVars.slice(nextIndex),
-          ];
-          setMissingVars(updatedVars);
-          setConfigIndex(nextIndex);
-          return;
-        }
-      }
-
-      if (nextIndex >= missingVars.length) {
-        // All done
-        finishConfig(command!, updated);
+      if (nextIndex >= state.missingVars.length) {
+        finishConfig(state.command!, updated);
       } else {
-        setConfigIndex(nextIndex);
+        dispatch({ type: "SET_CONFIG_ANSWERS", answers: updated });
+        dispatch({ type: "SET_CONFIG_INDEX", index: nextIndex });
       }
     },
-    [missingVars, configIndex, configAnswers, command, finishConfig],
+    [state.missingVars, state.configIndex, state.configAnswers, state.command, finishConfig],
   );
 
   const handleConfigBack = useCallback(() => {
-    if (configIndex <= 0) {
-      // Already at first field — go back to wherever we came from
-      setIsEditOnly(false);
-      setPhase(configOrigin);
+    if (state.configIndex <= 0) {
+      dispatch({ type: "BATCH", actions: [
+        { type: "SET_EDIT_ONLY", isEditOnly: false },
+        { type: "SET_PHASE", phase: state.configOrigin },
+      ]});
       return;
     }
-    const prevIndex = configIndex - 1;
-    const prevVar = missingVars[prevIndex];
-    // Remove the previous answer so the user can re-enter it
-    const updated = { ...configAnswers };
+    const prevIndex = state.configIndex - 1;
+    const prevVar = state.missingVars[prevIndex];
+    const updated = { ...state.configAnswers };
     delete updated[prevVar.key];
 
-    // If going back past PLATFORM, remove platform-specific vars that were dynamically inserted
-    if (prevVar.key === "PLATFORM") {
-      const oldPlatform = configAnswers["PLATFORM"];
-      if (oldPlatform) {
-        const platformVarKeys = (PLATFORM_VARS[oldPlatform] ?? []).map((v) => v.key);
-        const filtered = missingVars.filter((v) => !platformVarKeys.includes(v.key));
-        for (const k of platformVarKeys) delete updated[k];
-        setMissingVars(filtered);
+    // Remove dynamically-inserted platform/provider vars when going back
+    let filteredVars: typeof state.missingVars | undefined;
+    if (prevVar.key === "PLATFORM" || prevVar.key === "AI_PROVIDER") {
+      const varMap = prevVar.key === "PLATFORM" ? PLATFORM_VARS : PROVIDER_VARS;
+      const oldValue = state.configAnswers[prevVar.key];
+      if (oldValue) {
+        const dynamicKeys = (varMap[oldValue] ?? []).map((v) => v.key);
+        filteredVars = state.missingVars.filter((v) => !dynamicKeys.includes(v.key));
+        for (const k of dynamicKeys) delete updated[k];
       }
     }
 
-    // If going back past AI_PROVIDER, remove provider-specific vars that were dynamically inserted
-    if (prevVar.key === "AI_PROVIDER") {
-      const oldProvider = configAnswers["AI_PROVIDER"];
-      if (oldProvider) {
-        const providerVarKeys = (PROVIDER_VARS[oldProvider] ?? []).map((v) => v.key);
-        const filtered = missingVars.filter((v) => !providerVarKeys.includes(v.key));
-        for (const k of providerVarKeys) delete updated[k];
-        setMissingVars(filtered);
-      }
-    }
-
-    setConfigAnswers(updated);
-    setConfigIndex(prevIndex);
-  }, [configIndex, missingVars, configAnswers, configOrigin]);
+    dispatch({ type: "CONFIG_BACK", prevIndex, answers: updated, vars: filteredVars });
+  }, [state.configIndex, state.missingVars, state.configAnswers, state.configOrigin]);
 
   // ── Render ──
 
   return (
     <Box flexDirection="column">
-      {/* Banner — always shown */}
       <Banner />
 
-      {/* Phase: Menu */}
-      {phase === "menu" && (
-        <SelectInput
-          items={MENU_ITEMS}
-          onSelect={(item) => {
-            if (item.value === "exit") {
-              exit();
+      {state.phase === "menu" && (
+        <MenuPhase
+          onSelect={(value) => {
+            if (value === "exit") { exit(); return; }
+            if (value === "manage-profile") {
+              dispatch({ type: "BATCH", actions: [
+                { type: "SET_MANAGE_MESSAGE", message: null },
+                { type: "SET_PHASE", phase: "manage-profile" },
+              ]});
               return;
             }
-            if (item.value === "manage-profile") {
-              setManageMessage(null);
-              setPhase("manage-profile");
+            if (value === "setup-guide") {
+              dispatch({ type: "SET_PHASE", phase: "setup-guide" });
               return;
             }
-            if (item.value === "setup-guide") {
-              setPhase("setup-guide");
-              return;
-            }
-            const cmd = item.value as "watch" | "review";
-            setCommand(cmd);
+            const cmd = value as "watch" | "review";
+            dispatch({ type: "SET_COMMAND", command: cmd });
             startConfig(cmd);
           }}
         />
       )}
 
-      {/* Phase: Profile select */}
-      {phase === 'profile-select' && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1}>
-            <Text color="#00d4ff" bold>{'\u2630'} Select Profile</Text>
-          </Box>
-          <SelectInput
-            items={[
-              ...listProfiles().map((p) => ({
-                label: p === getActiveProfile() ? `${p} (active)` : p,
-                value: p,
-              })),
-              { label: '+ Create new profile', value: '__new__' },
-            ]}
-            onSelect={(item) => {
-              if (item.value === '__new__') {
-                setPhase('profile-name');
-              } else {
-                proceedWithProfile(command!, item.value);
-              }
-            }}
-            onBack={() => setPhase('menu')}
-          />
-        </Box>
+      {state.phase === "profile-select" && (
+        <ProfileSelectPhase
+          onSelect={(profile) => proceedWithProfile(state.command!, profile)}
+          onCreateNew={() => dispatch({ type: "SET_PHASE", phase: "profile-name" })}
+          onBack={() => dispatch({ type: "SET_PHASE", phase: "menu" })}
+        />
       )}
 
-      {/* Phase: Profile name input */}
-      {phase === 'profile-name' && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1}>
-            <Text color="#00d4ff" bold>{'\u2630'} New Profile</Text>
-          </Box>
-          <TextInput
-            label="Profile name"
-            onBack={() => setPhase('profile-select')}
-            onSubmit={(name) => {
-              try {
-                createProfile(name);
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                if (msg.includes("already exists")) {
-                  proceedWithProfile(command!, name);
-                  return;
-                }
-                setReviewError(msg);
-                setPhase("review-error");
-                return;
-              }
-              proceedWithProfile(command!, name);
-            }}
-          />
-        </Box>
+      {state.phase === "profile-name" && (
+        <ProfileNamePhase
+          command={state.command}
+          onCreated={(name) => proceedWithProfile(state.command!, name)}
+          onError={(msg) => dispatch({ type: "REVIEW_ERROR", error: msg })}
+          onBack={() => dispatch({ type: "SET_PHASE", phase: "profile-select" })}
+        />
       )}
 
-      {/* Phase: Manage profiles — select a profile */}
-      {phase === 'manage-profile' && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1}>
-            <Text color="#00d4ff" bold>{'\u2630'} Manage Profiles</Text>
-          </Box>
-          {manageMessage && (
-            <Box marginBottom={1}>
-              <Text color={manageMessage.color}>{manageMessage.text}</Text>
-            </Box>
-          )}
-          <SelectInput
-            items={listProfiles().map((p) => ({
-              label: p === getActiveProfile() ? `${p} (active)` : p,
-              value: p,
-            }))}
-            onSelect={(item) => {
-              setManageProfileName(item.value);
-              setPhase('manage-profile-action');
-            }}
-            onBack={() => setPhase('menu')}
-          />
-        </Box>
+      {state.phase === "manage-profile" && (
+        <ManageProfilePhase
+          message={state.manageMessage}
+          onSelect={(name) => {
+            dispatch({ type: "SET_MANAGE_PROFILE", name });
+            dispatch({ type: "SET_PHASE", phase: "manage-profile-action" });
+          }}
+          onBack={() => dispatch({ type: "SET_PHASE", phase: "menu" })}
+        />
       )}
 
-      {/* Phase: Manage profiles — choose action */}
-      {phase === 'manage-profile-action' && manageProfileName && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1} gap={1}>
-            <Text color="#00d4ff" bold>{'\u2630'}</Text>
-            <Text color="white" bold>{manageProfileName}</Text>
-          </Box>
-          <SelectInput
-            items={[
-              { label: 'Edit credentials', value: 'edit', icon: '\u270e', description: 'Re-enter keys and settings' },
-              { label: 'Delete profile', value: 'delete', icon: '\u2716', description: 'Remove this profile' },
-            ]}
-            onSelect={(item) => {
-              if (item.value === 'edit') {
-                dotenv.config();
-                editProfile(manageProfileName);
-              } else if (item.value === 'delete') {
-                if (deleteProfile(manageProfileName)) {
-                  setManageMessage({ text: `Deleted profile "${manageProfileName}"`, color: '#00ff88' });
-                } else {
-                  setManageMessage({ text: `Profile "${manageProfileName}" not found`, color: '#ff4444' });
-                }
-                setManageProfileName(null);
-                setPhase('manage-profile');
-              }
-            }}
-            onBack={() => setPhase('manage-profile')}
-          />
-        </Box>
+      {state.phase === "manage-profile-action" && state.manageProfileName && (
+        <ManageProfileActionPhase
+          profileName={state.manageProfileName}
+          onEdit={(name) => { dotenv.config(); editProfile(name); }}
+          onDelete={(name) => {
+            if (deleteProfile(name)) {
+              dispatch({ type: "SET_MANAGE_MESSAGE", message: { text: `Deleted profile "${name}"`, color: THEME.success } });
+            } else {
+              dispatch({ type: "SET_MANAGE_MESSAGE", message: { text: `Profile "${name}" not found`, color: THEME.error } });
+            }
+            dispatch({ type: "SET_MANAGE_PROFILE", name: null });
+            dispatch({ type: "SET_PHASE", phase: "manage-profile" });
+          }}
+          onBack={() => dispatch({ type: "SET_PHASE", phase: "manage-profile" })}
+        />
       )}
 
-      {/* Phase: Setup guide */}
-      {phase === 'setup-guide' && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box borderStyle="round" borderColor="#00d4ff" paddingX={2} paddingY={1} flexDirection="column">
-            <Text color="#00d4ff" bold>{'\u2139'} Azure DevOps Setup Guide</Text>
+      {state.phase === "setup-guide" && <SetupGuidePhase />}
 
-            <Box marginTop={1} flexDirection="column">
-              <Text color="white" bold>1. Create a dedicated user (recommended)</Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Create a new user in Azure DevOps named "Axiom" (or similar).
-              </Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}This way, review comments will appear as coming from the Axiom
-              </Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}agent rather than your personal account.
-              </Text>
-            </Box>
-
-            <Box marginTop={1} flexDirection="column">
-              <Text color="white" bold>2. Generate a Personal Access Token (PAT)</Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Go to Azure DevOps {'\u2192'} User Settings {'\u2192'} Personal Access Tokens
-              </Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Create a new token with the following scopes:
-              </Text>
-              <Text color="#00d4ff">{"   "}{'\u2022'} Code (Read)</Text>
-              <Text color="#00d4ff">{"   "}{'\u2022'} Pull Request Threads (Read & Write)</Text>
-            </Box>
-
-            <Box marginTop={1} flexDirection="column">
-              <Text color="white" bold>3. Copy the PAT</Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Copy the generated token. You will need it when configuring Axiom.
-              </Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}The token is only shown once, so save it securely.
-              </Text>
-            </Box>
-
-            <Box marginTop={1} flexDirection="column">
-              <Text color="white" bold>4. Configure Axiom</Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Select "Watch repositories" or "Review a PR" from the main menu.
-              </Text>
-              <Text color="#aaaaaa" wrap="wrap">
-                {"   "}Enter your organization name, paste the PAT, and select an AI provider.
-              </Text>
-            </Box>
-
-            <Box marginTop={1} borderStyle="single" borderColor="#555555" paddingX={1}>
-              <Text color="#ffaa00">{'\u26a0'} </Text>
-              <Text color="#ffaa00" wrap="wrap">
-                You can use your own PAT instead, but comments on PRs will appear under your name.
-              </Text>
-            </Box>
-          </Box>
-
-          <Box marginTop={1} gap={2} paddingX={1}>
-            <Text color="#555555">Press</Text>
-            <Text color="#00d4ff" bold>esc</Text>
-            <Text color="#555555">or</Text>
-            <Text color="#00d4ff" bold>q</Text>
-            <Text color="#555555">to go back</Text>
-          </Box>
-        </Box>
+      {state.phase === "config" && (
+        <ConfigPhase
+          missingVars={state.missingVars}
+          configIndex={state.configIndex}
+          configAnswers={state.configAnswers}
+          onAnswer={handleConfigAnswer}
+          onBack={handleConfigBack}
+        />
       )}
 
-      {/* Phase: Config form */}
-      {phase === "config" && missingVars.length > 0 && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1} gap={1}>
-            <Text color="#00d4ff" bold>
-              {"\u2699"} Configuration
-            </Text>
-            <Text color="#555555">
-              [{configIndex + 1}/{missingVars.length}]
-            </Text>
-          </Box>
-
-          {/* Progress bar */}
-          <Box marginBottom={1}>
-            <Text color="#00d4ff">{"\u2588".repeat(configIndex)}</Text>
-            <Text color="#333333">
-              {"\u2591".repeat(missingVars.length - configIndex)}
-            </Text>
-          </Box>
-
-          {/* Completed fields */}
-          {missingVars.slice(0, configIndex).map((def) => (
-            <Box key={def.key} gap={1}>
-              <Text color="#00ff88">{"\u2713"}</Text>
-              <Text color="#666666">{def.label}:</Text>
-              <Text color="#888888">
-                {def.type === "secret"
-                  ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                  : configAnswers[def.key]}
-              </Text>
-            </Box>
-          ))}
-
-          {/* Current field */}
-          {missingVars[configIndex] && (
-            <Box marginTop={configIndex > 0 ? 1 : 0}>
-              {missingVars[configIndex].type === "select" ? (
-                <Box flexDirection="column">
-                  <Text color="#00d4ff" bold>
-                    {missingVars[configIndex].label}
-                  </Text>
-                  <SelectInput
-                    items={(missingVars[configIndex].choices ?? []).map((c) => ({
-                      label: c,
-                      value: c,
-                    }))}
-                    onSelect={(item) => handleConfigAnswer(item.value)}
-                    onBack={handleConfigBack}
-                  />
-                </Box>
-              ) : (
-                <TextInput
-                  key={missingVars[configIndex].key}
-                  label={missingVars[configIndex].label}
-                  hint={missingVars[configIndex].hint}
-                  mask={missingVars[configIndex].type === "secret"}
-                  onSubmit={handleConfigAnswer}
-                  onBack={handleConfigBack}
-                />
-              )}
-            </Box>
-          )}
-        </Box>
+      {state.phase === "review-url" && (
+        <ReviewUrlPhase onSubmit={(url) => startReview(url, state.configAnswers)} />
       )}
 
-      {/* Phase: Review URL input */}
-      {phase === "review-url" && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1}>
-            <Text color="#00d4ff" bold>
-              {"\u2691"} Review a Pull Request
-            </Text>
-          </Box>
-          <TextInput
-            label="PR URL"
-            hint="https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}"
-            onSubmit={(value) => {
-              startReview(value, configAnswers);
-            }}
-          />
-        </Box>
+      {state.phase === "reviewing" && (
+        <ReviewingPhase prInfo={state.prInfo} status={state.reviewStatus} />
       )}
 
-      {/* Phase: Reviewing */}
-      {phase === "reviewing" && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box marginBottom={1}>
-            <Text color="#00d4ff" bold>
-              {"\u2691"} Review in Progress
-            </Text>
-          </Box>
-          {prInfo && (
-            <Box gap={1}>
-              <Text color="#888888">PR</Text>
-              <Text color="white" bold>
-                #{prInfo.prId}
-              </Text>
-              <Text color="#555555">in</Text>
-              <Text color="#00d4ff">
-                {prInfo.project}/{prInfo.repo}
-              </Text>
-            </Box>
-          )}
-          <Box marginTop={1}>
-            <Spinner label={reviewStatus} showDots />
-          </Box>
-        </Box>
+      {state.phase === "review-error" && (
+        <ReviewErrorPhase error={state.reviewError} />
       )}
 
-      {/* Phase: Review error */}
-      {phase === "review-error" && (
-        <Box flexDirection="column" paddingX={1}>
-          <Box
-            borderStyle="round"
-            borderColor="#ff4444"
-            paddingX={1}
-            flexDirection="column"
-          >
-            <Text bold color="#ff4444">
-              {"\u2717"} Review Failed
-            </Text>
-            <Box marginTop={1}>
-              <Text color="#ff8888" wrap="wrap">
-                {reviewError}
-              </Text>
-            </Box>
-          </Box>
-          <Box marginTop={1} gap={2}>
-            <Text color="#555555">Press</Text>
-            <Text color="#00d4ff" bold>
-              q
-            </Text>
-            <Text color="#555555">to exit</Text>
-          </Box>
-        </Box>
+      {state.phase === "review-done" && state.reviewResult && (
+        <ReviewDonePhase result={state.reviewResult} prInfo={state.prInfo} />
       )}
 
-      {/* Phase: Review complete */}
-      {phase === "review-done" && reviewResult && (
-        <Box flexDirection="column" paddingX={1}>
-          {/* Header */}
-          <Box borderStyle="round" borderColor="#00d4ff" paddingX={1}>
-            <Box gap={1}>
-              <Text color="#00d4ff" bold>
-                {"\u2713"} Review Complete
-              </Text>
-              {prInfo && (
-                <Text color="#555555">
-                  {"\u2502"} PR #{prInfo.prId} in {prInfo.project}/{prInfo.repo}
-                </Text>
-              )}
-            </Box>
-          </Box>
-
-          {/* Comments */}
-          <Box flexDirection="column" marginTop={1}>
-            <Box gap={1} marginBottom={1}>
-              <Text color="white" bold>
-                Comments
-              </Text>
-              <Text color="#555555">({reviewResult.comments.length})</Text>
-            </Box>
-            {reviewResult.comments.length === 0 ? (
-              <Box gap={1}>
-                <Text color="#00ff88">{"\u2713"}</Text>
-                <Text color="#00ff88">No issues found. Code looks good!</Text>
-              </Box>
-            ) : (
-              reviewResult.comments.map((comment, i) => (
-                <CommentRow key={i} comment={comment} />
-              ))
-            )}
-          </Box>
-
-          {/* Footer */}
-          <Box
-            marginTop={1}
-            borderStyle="round"
-            borderColor="#333333"
-            paddingX={1}
-            gap={2}
-          >
-            <Text color="#555555">Press</Text>
-            <Text color="#00d4ff" bold>
-              q
-            </Text>
-            <Text color="#555555">to exit</Text>
-          </Box>
-        </Box>
-      )}
-
-      {/* Phase: Launching watch */}
-      {phase === "launching-watch" && (
-        <Box paddingX={1} gap={1}>
-          <Spinner label="Launching watcher" showDots />
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-// ── Comment row ──
-
-function CommentRow({ comment }: { comment: ReviewComment }) {
-  const config = SEVERITY_CONFIG[comment.severity] ?? {
-    color: "#888888",
-    icon: "\u25cb",
-    label: comment.severity.toUpperCase(),
-  };
-
-  return (
-    <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-      <Box gap={1}>
-        <Text color={config.color} bold>
-          {config.icon} {config.label}
-        </Text>
-        <Text color="#00d4ff">{comment.filePath}</Text>
-        <Text color="#555555">:{comment.lineNumber}</Text>
-      </Box>
-      <Box paddingLeft={2}>
-        <Text wrap="wrap" color="#cccccc">
-          {comment.message}
-        </Text>
-      </Box>
+      {state.phase === "launching-watch" && <LaunchingPhase />}
     </Box>
   );
 }

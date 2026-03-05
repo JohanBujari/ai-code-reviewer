@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { ReviewJob } from '../../watcher/types';
+import { formatDuration, truncate } from '../../shared/format';
 
 interface PrQueueProps {
   pending: ReviewJob[];
@@ -34,11 +35,8 @@ function statusColor(job: ReviewJob): string {
   }
 }
 
-function formatDuration(start: number, end?: number): string {
-  const ms = (end ?? Date.now()) - start;
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+function formatJobDuration(start: number, end?: number): string {
+  return formatDuration((end ?? Date.now()) - start);
 }
 
 export function PrQueue({ pending, current, completed }: PrQueueProps) {
@@ -56,7 +54,7 @@ export function PrQueue({ pending, current, completed }: PrQueueProps) {
             {statusIcon(current)} PR #{current.prId}:{' '}
           </Text>
           <Text>{truncate(current.prTitle, 50)}</Text>
-          <Text dimColor> ({formatDuration(current.startedAt ?? current.queuedAt)})</Text>
+          <Text dimColor> ({formatJobDuration(current.startedAt ?? current.queuedAt)})</Text>
         </Box>
       )}
 
@@ -100,7 +98,3 @@ export function PrQueue({ pending, current, completed }: PrQueueProps) {
   );
 }
 
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen - 3) + '...';
-}
