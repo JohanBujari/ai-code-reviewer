@@ -1,6 +1,6 @@
 # Architecture Flow
 
-## Mermaid Diagram (renders in GitHub/GitLab)
+## Mermaid Diagram
 
 ```mermaid
 flowchart TB
