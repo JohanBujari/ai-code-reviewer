@@ -29,6 +29,7 @@ export async function fetchFileDiffs(
   changes: PrIterationChange[],
   baseCommitId: string,
   headCommitId: string,
+  maxDiffLength: number,
 ): Promise<PrFileChange[]> {
   const fileChanges: PrFileChange[] = [];
 
@@ -57,7 +58,12 @@ export async function fetchFileDiffs(
           { context: 3 },
         );
 
-        return { filePath, changeType: change.changeType, content: patch };
+        const content =
+          patch.length > maxDiffLength
+            ? `${patch.slice(0, maxDiffLength)}\n\\ diff truncated`
+            : patch;
+
+        return { filePath, changeType: change.changeType, content };
       }),
     );
 

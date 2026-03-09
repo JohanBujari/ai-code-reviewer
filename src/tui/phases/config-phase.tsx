@@ -73,6 +73,8 @@ export function ConfigPhase({ missingVars, configIndex, configAnswers, onAnswer,
               label={currentVar.label}
               hint={currentVar.hint}
               mask={currentVar.type === "secret"}
+              optional={currentVar.optional}
+              validate={currentVar.validate}
               onSubmit={onAnswer}
               onBack={onBack}
             />

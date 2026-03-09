@@ -64,7 +64,7 @@ function detectMissingVars(
 ): Set<string> {
   const missing = new Set<string>();
 
-  for (const key of ["PLATFORM", "AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT", "AI_PROVIDER"]) {
+  for (const key of ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT", "AI_PROVIDER"]) {
     if (!lookup(key)) missing.add(key);
   }
 
@@ -135,7 +135,7 @@ export async function loadEnvConfigInteractive(
 
 // ── Config Builder ───────────────────────────────────────
 
-function buildConfig(
+export function buildConfig(
   lookup: EnvLookup,
   options: { interval?: string; stateFile?: string },
   command: "watch" | "review",
@@ -215,17 +215,4 @@ function buildAiConfig(
         `Unsupported AI_PROVIDER: "${provider}". Must be one of: openai, anthropic, azure-openai`,
       );
   }
-}
-
-// ── Backward-compat sync loader ──────────────────────────
-
-export function loadEnvConfig(options: {
-  interval?: string;
-  stateFile?: string;
-  profile?: string;
-}): WatcherEnvConfig {
-  dotenv.config();
-  const saved = loadSavedConfig(options.profile);
-  const lookup: EnvLookup = (key) => process.env[key] ?? saved[key];
-  return buildConfig(lookup, options, "watch") as WatcherEnvConfig;
 }

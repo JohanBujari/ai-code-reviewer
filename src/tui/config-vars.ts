@@ -1,7 +1,5 @@
-import type { AiConfig } from "../config";
+import { buildConfig } from "../cli/env";
 import type { BaseEnvConfig, WatcherEnvConfig } from "../cli/env";
-import type { WatchedRepo } from "../watcher/types";
-import { getDefaultStatePath } from "../cli/config-store";
 
 export interface VarDef {
   key: string;
@@ -9,15 +7,13 @@ export interface VarDef {
   type: "text" | "secret" | "select";
   choices?: string[];
   hint?: string;
+  /** If true, the field is shown in config but not treated as required */
+  optional?: boolean;
+  /** Return an error message if invalid, or null/undefined if valid */
+  validate?: (value: string) => string | null;
 }
 
 export const COMMON_VARS: VarDef[] = [
-  {
-    key: "PLATFORM",
-    label: "Platform",
-    type: "select",
-    choices: ["azure-devops"],
-  },
   {
     key: "AI_PROVIDER",
     label: "AI Provider",
@@ -34,9 +30,13 @@ export const PLATFORM_VARS: Record<string, VarDef[]> = {
 };
 
 export const PROVIDER_VARS: Record<string, VarDef[]> = {
-  openai: [{ key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" }],
+  openai: [
+    { key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" },
+    { key: "OPENAI_MODEL", label: "Model", type: "text", hint: "e.g. gpt-5.2 (default: gpt-5.2)", optional: true },
+  ],
   anthropic: [
     { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "secret" },
+    { key: "ANTHROPIC_MODEL", label: "Model", type: "text", hint: "e.g. claude-sonnet-4-5 (default: claude-sonnet-4-5)", optional: true },
   ],
   "azure-openai": [
     {
@@ -63,9 +63,33 @@ export const WATCH_VARS: VarDef[] = [
     key: "WATCH_REPOS",
     label: "Repos to watch",
     type: "text",
-    hint: "comma-separated, format: project/repoId/repoName",
+    hint: "format: project/repoId/repoName (comma-separated for multiple)",
+    validate: (value: string) => {
+      const entries = value.split(",").map((e) => e.trim()).filter(Boolean);
+      if (entries.length === 0) return "At least one repo is required";
+      for (const entry of entries) {
+        const parts = entry.split("/");
+        if (parts.length < 2) return `Invalid format: "${entry}" — expected project/repoId/repoName`;
+      }
+      return null;
+    },
   },
 ];
+
+/** Ordered list of all config vars for a given command + known values.
+ *  Order: AI Provider → provider-specific → Azure DevOps → repos (watch only) */
+function resolveVarList(
+  command: "watch" | "review",
+  lookup: (key: string) => string | undefined,
+): VarDef[] {
+  const provider = lookup("AI_PROVIDER");
+  return [
+    ...COMMON_VARS,
+    ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
+    ...(PLATFORM_VARS["azure-devops"] ?? []),
+    ...(command === "watch" ? WATCH_VARS : []),
+  ];
+}
 
 export function detectMissingVars(
   command: "watch" | "review",
@@ -75,28 +99,14 @@ export function detectMissingVars(
   // Only check answers and saved config — not process.env, which may
   // contain stale values from a previously configured profile.
   const lookup = (key: string) => answers[key] ?? saved[key];
-  const missing: VarDef[] = [];
-  for (const def of COMMON_VARS) {
-    if (!lookup(def.key)) missing.push(def);
-  }
-  const platform = lookup("PLATFORM");
-  if (platform) {
-    for (const def of PLATFORM_VARS[platform] ?? []) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  const provider = lookup("AI_PROVIDER");
-  if (provider) {
-    for (const def of PROVIDER_VARS[provider] ?? []) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  if (command === "watch") {
-    for (const def of WATCH_VARS) {
-      if (!lookup(def.key)) missing.push(def);
-    }
-  }
-  return missing;
+  return resolveVarList(command, lookup).filter((def) => {
+    if (def.optional) return false;
+    const val = lookup(def.key);
+    if (!val) return true;
+    // Re-prompt if the saved value fails validation
+    if (def.validate && def.validate(val) !== null) return true;
+    return false;
+  });
 }
 
 /** Load a profile's saved config into a flat key-value map (skipping empty values) */
@@ -110,20 +120,13 @@ export function loadProfileAnswers(
   return answers;
 }
 
-/** Build the full list of config vars based on the resolved platform and provider */
+/** Build the full list of config vars (for edit mode — includes all fields) */
 export function buildAllVars(
   answers: Record<string, string>,
   saved?: Record<string, string | undefined>,
 ): VarDef[] {
   const lookup = (key: string) => answers[key] ?? saved?.[key] ?? process.env[key];
-  const platform = lookup("PLATFORM");
-  const provider = lookup("AI_PROVIDER");
-  return [
-    ...COMMON_VARS,
-    ...(platform ? (PLATFORM_VARS[platform] ?? []) : []),
-    ...(provider ? (PROVIDER_VARS[provider] ?? []) : []),
-    ...WATCH_VARS,
-  ];
+  return resolveVarList("watch", lookup);
 }
 
 export function buildConfigFromEnv(
@@ -131,69 +134,6 @@ export function buildConfigFromEnv(
   command: "watch" | "review",
   options: { interval?: string; stateFile?: string },
 ): WatcherEnvConfig | BaseEnvConfig {
-  const lookup = (key: string) => answers[key] ?? process.env[key];
-  const require = (key: string): string => {
-    const val = lookup(key);
-    if (!val) throw new Error(`Missing required configuration: ${key}`);
-    return val;
-  };
-
-  const platform = lookup("PLATFORM") ?? "azure-devops";
-  const org = require("AZURE_DEVOPS_ORG");
-  const pat = require("AZURE_DEVOPS_PAT");
-  const provider = require("AI_PROVIDER") as
-    | "openai"
-    | "anthropic"
-    | "azure-openai";
-
-  let ai: AiConfig;
-  switch (provider) {
-    case "openai":
-      ai = {
-        provider: "openai",
-        apiKey: require("OPENAI_API_KEY"),
-        model: lookup("OPENAI_MODEL"),
-      };
-      break;
-    case "anthropic":
-      ai = {
-        provider: "anthropic",
-        apiKey: require("ANTHROPIC_API_KEY"),
-        model: lookup("ANTHROPIC_MODEL"),
-      };
-      break;
-    case "azure-openai":
-      ai = {
-        provider: "azure-openai",
-        endpoint: require("AZURE_OPENAI_ENDPOINT"),
-        apiKey: require("AZURE_OPENAI_API_KEY"),
-        deployment: require("AZURE_OPENAI_DEPLOYMENT"),
-        apiVersion: lookup("AZURE_OPENAI_API_VERSION"),
-      };
-      break;
-    default:
-      throw new Error(`Unsupported AI_PROVIDER: "${provider}"`);
-  }
-
-  const base: BaseEnvConfig = { platform, azureDevOps: { org, pat }, ai };
-  if (command === "review") return base;
-
-  const reposRaw = require("WATCH_REPOS");
-  const repos: WatchedRepo[] = reposRaw.split(",").map((entry) => {
-    const parts = entry.trim().split("/");
-    if (parts.length < 2)
-      throw new Error(`Invalid WATCH_REPOS entry: "${entry}"`);
-    return {
-      project: parts[0],
-      repoId: parts[1],
-      repoName: parts[2] ?? parts[1],
-    };
-  });
-
-  return {
-    ...base,
-    repos,
-    pollIntervalMs: parseInt(options.interval ?? "30", 10) * 1000,
-    stateFilePath: options.stateFile ?? getDefaultStatePath(),
-  };
+  const lookup = (key: string) => answers[key] || process.env[key] || undefined;
+  return buildConfig(lookup, options, command);
 }

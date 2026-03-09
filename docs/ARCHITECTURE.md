@@ -6,7 +6,7 @@
 flowchart TB
     subgraph Triggers["Entry Points"]
         Webhook["Webhook (Express/Fastify)"]
-        Watch["CLI: pr-agent watch"]
+        Watch["CLI: axiom-pr watch"]
         Direct["Programmatic API"]
     end
 
@@ -115,13 +115,13 @@ flowchart TB
    PrReviewer → AiProvider (Azure OpenAI | OpenAI | Anthropic)
    ├─ Chunk files if too large
    ├─ Build prompt (system + file diffs)
-   └─ Parse JSON response → { summary, comments[] }
+   └─ Parse JSON response → { comments[] }
 
 5. POST RESULTS
    PrReviewer → AzureDevOpsClient
    ├─ setPrStatus('pending')           → "AI review in progress"
    ├─ createCommentThread()            → inline comments per issue
-   ├─ createGeneralComment()           → summary at top of PR
+   ├─ createGeneralComment()           → error notice on failure
    └─ setPrStatus('succeeded'|'failed') → based on critical issues
 ```
 

@@ -6,13 +6,16 @@ interface TextInputProps {
   label: string;
   hint?: string;
   mask?: boolean;
+  optional?: boolean;
+  validate?: (value: string) => string | null;
   onSubmit: (value: string) => void;
   onBack?: () => void;
   accentColor?: string;
 }
 
-export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = THEME.primary }: TextInputProps) {
+export function TextInput({ label, hint, mask, optional, validate, onSubmit, onBack, accentColor = THEME.primary }: TextInputProps) {
   const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [cursorVisible, setCursorVisible] = useState(true);
 
   // Blinking cursor
@@ -23,13 +26,19 @@ export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = T
 
   useInput((input, key) => {
     if (key.return) {
-      if (value.length > 0) {
-        onSubmit(value);
+      // Allow empty submit for optional fields
+      if (value.length === 0 && !optional) return;
+      if (value.length > 0 && validate) {
+        const err = validate(value);
+        if (err) { setError(err); return; }
       }
+      setError(null);
+      onSubmit(value);
       return;
     }
     if (key.backspace || key.delete) {
       setValue((prev) => prev.slice(0, -1));
+      if (error) setError(null);
       return;
     }
     if (key.escape && onBack) {
@@ -41,6 +50,7 @@ export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = T
     }
     if (input) {
       setValue((prev) => prev + input);
+      if (error) setError(null);
     }
   });
 
@@ -58,8 +68,11 @@ export function TextInput({ label, hint, mask, onSubmit, onBack, accentColor = T
         <Text color="white">{displayValue}</Text>
         <Text color={accentColor}>{cursor}</Text>
       </Box>
-      {value.length === 0 && (
-        <Text color={THEME.textDarkest}>  Type your value and press Enter{onBack ? ' · Esc to go back' : ''}</Text>
+      {error && (
+        <Text color={THEME.error}>  {'\u2717'} {error}</Text>
+      )}
+      {!error && value.length === 0 && (
+        <Text color={THEME.textDarkest}>  {optional ? 'Press Enter to skip' : 'Type your value and press Enter'}{onBack ? ' · Esc to go back' : ''}</Text>
       )}
     </Box>
   );

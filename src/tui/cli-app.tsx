@@ -161,8 +161,13 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
   const finishConfig = useCallback(
     (cmd: "watch" | "review" | null, answers: Record<string, string>) => {
-      mergeAndSaveConfig(answers, state.selectedProfile ?? undefined);
+      // Filter out empty optional values before persisting
+      const cleaned: Record<string, string> = {};
       for (const [key, value] of Object.entries(answers)) {
+        if (value) cleaned[key] = value;
+      }
+      mergeAndSaveConfig(cleaned, state.selectedProfile ?? undefined);
+      for (const [key, value] of Object.entries(cleaned)) {
         process.env[key] = value;
       }
       if (state.isEditOnly) {
@@ -276,23 +281,31 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       const updated = { ...state.configAnswers, [currentVar.key]: value };
       const nextIndex = state.configIndex + 1;
 
-      // Check if we need more platform/provider-specific vars
+      // When platform/provider changes, swap in the correct specific vars
       if (currentVar.key === "PLATFORM" || currentVar.key === "AI_PROVIDER") {
         const varMap = currentVar.key === "PLATFORM" ? PLATFORM_VARS : PROVIDER_VARS;
-        const specificVars = varMap[value] ?? [];
-        const lookup = (key: string) => updated[key];
-        const newMissing = specificVars.filter((def) => !lookup(def.key));
-        if (newMissing.length > 0) {
-          const updatedVars = [
-            ...state.missingVars.slice(0, nextIndex),
-            ...newMissing,
-            ...state.missingVars.slice(nextIndex),
-          ];
-          dispatch({ type: "SET_CONFIG_ANSWERS", answers: updated });
-          dispatch({ type: "SET_MISSING_VARS", vars: updatedVars });
-          dispatch({ type: "SET_CONFIG_INDEX", index: nextIndex });
-          return;
-        }
+        const newVars = varMap[value] ?? [];
+
+        // Collect ALL keys from every option in this map so we can remove stale ones
+        const allDynamicKeys = new Set(
+          Object.values(varMap).flatMap((defs) => defs.map((d) => d.key)),
+        );
+
+        // Remove old dynamic vars from the list, clear their answers
+        const cleaned = state.missingVars
+          .slice(nextIndex)
+          .filter((v) => !allDynamicKeys.has(v.key));
+        for (const k of allDynamicKeys) delete updated[k];
+
+        const updatedVars = [
+          ...state.missingVars.slice(0, nextIndex),
+          ...newVars,
+          ...cleaned,
+        ];
+        dispatch({ type: "SET_CONFIG_ANSWERS", answers: updated });
+        dispatch({ type: "SET_MISSING_VARS", vars: updatedVars });
+        dispatch({ type: "SET_CONFIG_INDEX", index: nextIndex });
+        return;
       }
 
       if (nextIndex >= state.missingVars.length) {

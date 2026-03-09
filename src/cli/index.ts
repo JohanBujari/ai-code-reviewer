@@ -15,7 +15,7 @@ import {
 const program = new Command();
 
 program
-  .name("axiom")
+  .name("axiom-pr")
   .description("Axiom — AI-powered Azure DevOps PR reviewer")
   .version(process.env.APP_VERSION ?? "0.0.0")
   .option("-p, --profile <name>", "Use a specific configuration profile");

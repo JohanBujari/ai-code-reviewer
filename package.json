@@ -1,12 +1,12 @@
 {
-  "name": "axiom",
+  "name": "axiom-pr",
   "version": "1.0.0",
   "description": "AI-powered pull request reviewer for Azure DevOps. Supports Azure OpenAI, OpenAI, and Claude. Includes CLI watcher with TUI.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "axiom": "./dist/cli.mjs"
+    "axiom-pr": "./dist/cli.mjs"
   },
   "exports": {
     ".": {
@@ -21,6 +21,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "node test/smoke.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -37,8 +38,16 @@
     "tui",
     "cli"
   ],
-  "author": "",
+  "author": "Enis Karriqi, Johan Bujari",
+  "homepage": "https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer",
+  "bugs": {
+    "url": "https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

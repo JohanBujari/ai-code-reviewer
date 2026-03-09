@@ -1,4 +1,4 @@
-# axiom
+# axiom-pr
 
 AI-powered pull request reviewer for Azure DevOps. Supports **OpenAI**, **Claude (Anthropic)**, and **Azure OpenAI**.
 
@@ -9,8 +9,17 @@ Two modes of operation:
 
 ## Installation
 
+### CLI
+
 ```bash
-npm install -g axiom
+npm install -g axiom-pr
+axiom-pr --help
+```
+
+### Library
+
+```bash
+npm install axiom-pr
 ```
 
 ## CLI Watcher (Recommended)
@@ -19,7 +28,7 @@ The watcher runs as a daemon, polls Azure DevOps for new PRs and new iterations 
 
 ### Setup
 
-The CLI uses an interactive setup wizard — just run `axiom` and it will prompt you for everything. Configuration is saved to `~/.axiom/config.json` and reused on subsequent runs.
+The CLI uses an interactive setup wizard. Run `axiom-pr` and it will prompt you for everything. Configuration is saved to `~/.axiom/config.json` and reused on subsequent runs.
 
 Alternatively, you can use a `.env` file or environment variables:
 
@@ -32,8 +41,8 @@ AZURE_DEVOPS_PAT=your-personal-access-token
 AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 
-# Repositories to watch (comma-separated: project/repoId/displayName)
-WATCH_REPOS=MyProject/my-repo/my-repo
+# Repositories to watch (watch mode only, format: project/repoId/displayName)
+WATCH_REPOS=MyProject/repo-guid-or-name/my-repo
 ```
 
 ### Finding your repo details
@@ -56,36 +65,37 @@ WATCH_REPOS=EasyHR/EasyHR_frontend/EasyHR_frontend,PGFlow/PGFlow/PGFlow
 ### Running
 
 ```bash
-# Build first
-npm run build
+# First-time interactive setup
+axiom-pr
 
-# Run with TUI
-node dist/cli.mjs watch
+# Start watching with the TUI
+axiom-pr watch
 
 # Run without TUI (for Docker/CI/servers)
-node dist/cli.mjs watch --no-tui
+axiom-pr watch --no-tui
 
 # Custom poll interval (default: 30s)
-node dist/cli.mjs watch --interval 60
+axiom-pr watch --interval 60
 
 # Custom state file location
-node dist/cli.mjs watch --state-file ./my-state.json
+axiom-pr watch --state-file ./my-state.json
 
 # Use a specific profile
-node dist/cli.mjs watch --profile work
+axiom-pr watch --profile work
 
-# Or link globally
-npm link
-axiom watch
+# From a local repo checkout instead of npm
+npm install
+npm run build
+node dist/cli.mjs watch
 ```
 
 ### Review a single PR
 
 ```bash
-node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123
+axiom-pr review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123
 
 # With a specific profile
-node dist/cli.mjs review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123 --profile client-x
+axiom-pr review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123 --profile client-x
 ```
 
 ### Configuration Profiles
@@ -94,13 +104,15 @@ Axiom supports named profiles for managing multiple Azure DevOps organizations o
 
 ```bash
 # Profile management
-axiom profile list              # List all profiles (* = active)
-axiom profile use <name>        # Switch active profile
-axiom profile delete <name>     # Delete a profile
+axiom-pr profile list              # List all profiles (* = active)
+axiom-pr profile add <name>        # Create and switch to a new profile
+axiom-pr profile edit [name]       # Update saved credentials/settings
+axiom-pr profile use <name>        # Switch active profile
+axiom-pr profile delete <name>     # Delete a profile
 
 # Use a profile for a single command
-axiom watch --profile work
-axiom review <url> --profile client-x
+axiom-pr watch --profile work
+axiom-pr review <url> --profile client-x
 ```
 
 On first run, the TUI prompts you to name your profile. On subsequent runs, you'll see a profile selector to pick an existing profile or create a new one.
@@ -155,7 +167,7 @@ The terminal UI shows:
 
 ### State Persistence
 
-The watcher saves state to `~/.axiom/pr-agent-state.json` by default (configurable via `--state-file`) to:
+The watcher saves state to `~/.axiom/axiom-state.json` by default (configurable via `--state-file`) to:
 - Avoid re-reviewing PRs after restart
 - Track which iteration was last reviewed
 - Auto-cleanup entries older than 7 days
@@ -167,21 +179,20 @@ The watcher saves state to `~/.axiom/pr-agent-state.json` by default (configurab
 3. Compares against saved state to detect new work
 4. Queues new reviews (processes one at a time)
 5. Fetches changed files, filters out binaries/lock files
-6. Chunks large changes and sends to the AI provider
+6. Truncates very large diffs, then chunks the review workload for the AI provider
 7. Posts inline comments on specific lines in Azure DevOps
-8. Posts a summary comment with severity breakdown
-9. Sets PR status (succeeded/failed based on critical issues)
-10. Saves state to prevent duplicate reviews
+8. Sets PR status (succeeded/failed based on critical issues)
+9. Saves state to prevent duplicate reviews
 
 ## Library Usage (Webhook Mode)
 
-For integration into your own server — the library has zero production dependencies and uses native `fetch()`.
+For integration into your own server. Install it locally with `npm install axiom-pr`.
 
 ### Express
 
 ```typescript
 import express from "express";
-import { createPrReviewer } from "axiom";
+import { createPrReviewer } from "axiom-pr";
 
 const app = express();
 app.use(express.json());
@@ -215,7 +226,7 @@ app.listen(3000);
 
 ```typescript
 import express from "express";
-import { expressMiddleware } from "axiom";
+import { expressMiddleware } from "axiom-pr";
 
 const app = express();
 app.use(express.json());
@@ -236,7 +247,7 @@ app.listen(3000);
 
 ```typescript
 import Fastify from "fastify";
-import { createPrReviewer } from "axiom";
+import { createPrReviewer } from "axiom-pr";
 
 const fastify = Fastify();
 const reviewer = createPrReviewer({
@@ -261,7 +272,7 @@ fastify.listen({ port: 3000 });
 
 ```typescript
 import { Controller, Post, Req, Res } from "@nestjs/common";
-import { createPrReviewer } from "axiom";
+import { createPrReviewer } from "axiom-pr";
 
 const reviewer = createPrReviewer({
   azureDevOps: { org: "my-org", pat: process.env.AZURE_DEVOPS_PAT! },
@@ -343,7 +354,7 @@ ai: {
 | `-p, --profile <name>` | active profile | Use a specific configuration profile |
 | `--no-tui` | TUI enabled | Disable terminal UI, log to stdout |
 | `--interval <seconds>` | `30` | Poll interval in seconds (watch only) |
-| `--state-file <path>` | `~/.axiom/pr-agent-state.json` | Path to state persistence file (watch only) |
+| `--state-file <path>` | `~/.axiom/axiom-state.json` | Path to state persistence file (watch only) |
 
 ## Environment Variables (CLI)
 
@@ -353,7 +364,7 @@ ai: {
 | `AZURE_DEVOPS_PAT` | Yes | Personal access token |
 | `AI_PROVIDER` | Yes | `openai`, `anthropic`, or `azure-openai` |
 | `OPENAI_API_KEY` | If openai | OpenAI API key |
-| `WATCH_REPOS` | Yes | Comma-separated repos: `project/repoId/name` |
+| `WATCH_REPOS` | Watch only | Comma-separated repos: `project/repoId/name` |
 | `OPENAI_MODEL` | No | Override model (default: `gpt-5.2`) |
 | `ANTHROPIC_API_KEY` | If anthropic | Anthropic API key |
 | `ANTHROPIC_MODEL` | No | Override model (default: `claude-sonnet-4-5`) |
@@ -406,8 +417,8 @@ ENTRYPOINT ["node", "dist/cli.mjs", "watch", "--no-tui"]
 ```
 
 ```bash
-docker build -t pr-agent .
-docker run --env-file .env pr-agent
+docker build -t axiom-pr .
+docker run --env-file .env axiom-pr
 ```
 
 ### systemd
@@ -418,9 +429,9 @@ Description=PR Agent Watcher
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/node /opt/pr-agent/dist/cli.mjs watch --no-tui
-WorkingDirectory=/opt/pr-agent
-EnvironmentFile=/opt/pr-agent/.env
+ExecStart=/usr/bin/node /opt/axiom-pr/dist/cli.mjs watch --no-tui
+WorkingDirectory=/opt/axiom-pr
+EnvironmentFile=/opt/axiom-pr/.env
 Restart=always
 RestartSec=10
 
@@ -441,7 +452,7 @@ const result = await reviewer.reviewPullRequest(
   "PR Description", // Optional
 );
 
-console.log(result.summary);
+console.log(result.comments);
 console.log(`Found ${result.comments.length} issues`);
 ```
 
@@ -455,8 +466,8 @@ src/
 │   ├── config-store.ts     # Profile-based config persistence (~/.axiom/config.json)
 │   ├── prompt.ts           # Non-TUI prompting primitives
 │   └── commands/
-│       ├── watch.ts        # axiom watch
-│       └── review.ts       # axiom review <url>
+│       ├── watch.ts        # axiom-pr watch
+│       └── review.ts       # axiom-pr review <url>
 ├── watcher/                # Polling + queue engine
 │   ├── orchestrator.ts     # Wires poller → queue → reviewer
 │   ├── poller.ts           # Polls Azure DevOps on interval
@@ -467,9 +478,12 @@ src/
 │   ├── app.tsx             # Root component (watch dashboard)
 │   ├── cli-app.tsx         # Interactive config wizard + review UI
 │   ├── store.ts            # Event-driven state
+│   ├── config-vars.ts      # Config variable definitions + detection
 │   ├── hooks/
-│   │   └── use-app-state.ts
-│   └── components/         # UI components
+│   │   ├── use-app-state.ts
+│   │   └── use-cli-reducer.ts
+│   ├── phases/             # Phase-specific UI components
+│   └── components/         # Shared UI components
 ├── ai/                     # AI provider (Vercel AI SDK)
 │   ├── provider.ts         # Interface + system prompt
 │   ├── vercel-ai-provider.ts  # OpenAI/Anthropic/Azure via Vercel AI SDK

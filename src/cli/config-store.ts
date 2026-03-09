@@ -10,7 +10,7 @@ import { join } from "path";
 
 const CONFIG_DIR = join(homedir(), ".axiom");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-const STATE_FILE = join(CONFIG_DIR, "pr-agent-state.json");
+const STATE_FILE = join(CONFIG_DIR, "axiom-state.json");
 
 // ── Keys that belong in `global` (shared across profiles) ──
 
@@ -179,7 +179,7 @@ export function getConfigPath(): string {
   return CONFIG_FILE;
 }
 
-/** Get default state file path (~/.axiom/pr-agent-state.json) */
+/** Get default state file path (~/.axiom/axiom-state.json) */
 export function getDefaultStatePath(): string {
   return STATE_FILE;
 }

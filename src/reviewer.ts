@@ -47,6 +47,7 @@ export class PrReviewer {
   private readonly ai: AiProvider;
   readonly logger: Logger;
   private readonly maxFiles: number;
+  private readonly maxDiffLength: number;
   private readonly skipPatterns: RegExp[];
   private readonly systemPrompt: string;
   private readonly dedup = new ReviewDeduplicator();
@@ -60,6 +61,7 @@ export class PrReviewer {
     );
     this.ai = createAiProvider(options.ai);
     this.maxFiles = options.maxFiles ?? DEFAULTS.maxFiles;
+    this.maxDiffLength = options.maxDiffLength ?? DEFAULTS.maxDiffLength;
     this.skipPatterns = options.skipPatterns ?? SKIP_PATTERNS;
     this.systemPrompt = options.customPrompt ?? SYSTEM_PROMPT;
   }
@@ -140,6 +142,7 @@ export class PrReviewer {
         cappedChanges,
         latestIteration.targetRefCommit.commitId,
         latestIteration.sourceRefCommit.commitId,
+        this.maxDiffLength,
       );
 
       if (fileChanges.length === 0) {

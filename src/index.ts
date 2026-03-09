@@ -12,7 +12,7 @@ export function createPrReviewer(options: PrReviewerOptions): PrReviewer {
  * Usage:
  * ```ts
  * import express from 'express';
- * import { expressMiddleware } from 'axiom';
+ * import { expressMiddleware } from 'axiom-pr';
  *
  * const app = express();
  * app.use('/api/pr-review', expressMiddleware({ ... }));
