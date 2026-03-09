@@ -6,7 +6,7 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "axiom-pr": "./dist/cli.mjs"
+    "axiom-pr": "dist/cli.mjs"
   },
   "exports": {
     ".": {
@@ -39,14 +39,14 @@
     "cli"
   ],
   "author": "Enis Karriqi, Johan Bujari",
-  "homepage": "https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer",
+  "homepage": "https://github.com/JohanBujari/ai-code-reviewer",
   "bugs": {
-    "url": "https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer/issues"
+    "url": "https://github.com/JohanBujari/ai-code-reviewer/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://dev.azure.com/jonibujari/AI%20Code%20Reviewer/_git/AI%20Code%20Reviewer"
+    "url": "git+https://github.com/JohanBujari/ai-code-reviewer.git"
   },
   "engines": {
     "node": ">=18.0.0"
