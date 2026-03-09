@@ -120,6 +120,13 @@ export function loadSavedConfig(profileName?: string): SavedConfig {
   return { ...config.global, ...profile };
 }
 
+/** Load only the profile-specific config (no globals merged in) */
+export function loadProfileOnlyConfig(profileName?: string): SavedConfig {
+  const config = loadConfigFile();
+  const name = profileName ?? config.activeProfile ?? "default";
+  return { ...(config.profiles[name] ?? {}) };
+}
+
 /** Save flat config directly (kept for backward compat — prefers mergeAndSaveConfig).
  *  All keys go to the active profile; profile overrides global when loading. */
 export function saveConfig(config: SavedConfig): void {

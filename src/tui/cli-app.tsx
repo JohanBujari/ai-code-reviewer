@@ -8,6 +8,7 @@ import { startTui } from "./app";
 import { PrReviewer } from "../reviewer";
 import {
   loadSavedConfig,
+  loadProfileOnlyConfig,
   mergeAndSaveConfig,
   setActiveProfile,
   createProfile,
@@ -63,10 +64,16 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
     selectedProfile: initialProfile ?? null,
   });
 
-  // Handle q to exit on terminal phases, Esc to go back on info phases
+  // Handle q/Esc to go back on terminal and info phases
   useInput((input, key) => {
-    if ((state.phase === "review-done" || state.phase === "review-error") && input === "q") {
-      exit();
+    if (state.phase === "review-done" && (key.escape || input === "q")) {
+      dispatch({ type: "SET_PHASE", phase: "menu" });
+    }
+    if (state.phase === "review-error" && (key.escape || input === "q")) {
+      dispatch({ type: "SET_PHASE", phase: "menu" });
+    }
+    if (state.phase === "reviewing" && key.escape) {
+      dispatch({ type: "SET_PHASE", phase: "menu" });
     }
     if (state.phase === "setup-guide" && (key.escape || input === "q")) {
       dispatch({ type: "SET_PHASE", phase: "menu" });
@@ -106,8 +113,10 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           orchestrator.start();
         }, 100);
       } catch (err) {
-        console.error("Configuration error:", err instanceof Error ? err.message : err);
-        exit();
+        dispatch({
+          type: "REVIEW_ERROR",
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     },
     [options, exit],
@@ -199,11 +208,15 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       setActiveProfile(profileName);
       dispatch({ type: "SELECT_PROFILE", profile: profileName });
 
-      const saved = loadSavedConfig(profileName);
-      const preAnswers = loadProfileAnswers(saved);
-      const missing = detectMissingVars(cmd, preAnswers, saved);
+      // Use profile-only config for missing detection so globals
+      // don't mask fields the user hasn't explicitly set on this profile.
+      const profileOnly = loadProfileOnlyConfig(profileName);
+      const preAnswers = loadProfileAnswers(profileOnly);
+      const missing = detectMissingVars(cmd, preAnswers, profileOnly);
       if (missing.length === 0) {
-        finishConfig(cmd, preAnswers);
+        // All fields are set on this profile — use full merged config to launch
+        const saved = loadSavedConfig(profileName);
+        finishConfig(cmd, loadProfileAnswers(saved));
         return;
       }
       dispatch({
@@ -267,7 +280,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       if (currentVar.key === "PLATFORM" || currentVar.key === "AI_PROVIDER") {
         const varMap = currentVar.key === "PLATFORM" ? PLATFORM_VARS : PROVIDER_VARS;
         const specificVars = varMap[value] ?? [];
-        const lookup = (key: string) => updated[key] ?? process.env[key];
+        const lookup = (key: string) => updated[key];
         const newMissing = specificVars.filter((def) => !lookup(def.key));
         if (newMissing.length > 0) {
           const updatedVars = [
@@ -406,7 +419,10 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       )}
 
       {state.phase === "review-url" && (
-        <ReviewUrlPhase onSubmit={(url) => startReview(url, state.configAnswers)} />
+        <ReviewUrlPhase
+          onSubmit={(url) => startReview(url, state.configAnswers)}
+          onBack={() => dispatch({ type: "SET_PHASE", phase: "menu" })}
+        />
       )}
 
       {state.phase === "reviewing" && (
@@ -439,9 +455,9 @@ export function startCliApp(opts: {
     try {
       createProfile(opts.profile);
       setActiveProfile(opts.profile);
-    } catch (err) {
-      console.error(err instanceof Error ? err.message : err);
-      process.exit(1);
+    } catch {
+      // Profile creation failed — let the TUI handle it interactively
+      opts.profile = undefined;
     }
   }
   render(

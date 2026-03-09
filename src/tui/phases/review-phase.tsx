@@ -8,9 +8,10 @@ import type { ReviewResult, ReviewComment } from "../../types";
 
 interface ReviewUrlPhaseProps {
   onSubmit: (url: string) => void;
+  onBack: () => void;
 }
 
-export function ReviewUrlPhase({ onSubmit }: ReviewUrlPhaseProps) {
+export function ReviewUrlPhase({ onSubmit, onBack }: ReviewUrlPhaseProps) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Box marginBottom={1}>
@@ -22,6 +23,7 @@ export function ReviewUrlPhase({ onSubmit }: ReviewUrlPhaseProps) {
         label="PR URL"
         hint="https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}"
         onSubmit={onSubmit}
+        onBack={onBack}
       />
     </Box>
   );
@@ -55,6 +57,11 @@ export function ReviewingPhase({ prInfo, status }: ReviewingPhaseProps) {
       <Box marginTop={1}>
         <Spinner label={status} showDots />
       </Box>
+      <Box marginTop={1} gap={2}>
+        <Text color={THEME.textDimmer}>Press</Text>
+        <Text color={THEME.primary} bold>esc</Text>
+        <Text color={THEME.textDimmer}>to cancel</Text>
+      </Box>
     </Box>
   );
 }
@@ -83,10 +90,10 @@ export function ReviewErrorPhase({ error }: ReviewErrorPhaseProps) {
       </Box>
       <Box marginTop={1} gap={2}>
         <Text color={THEME.textDimmer}>Press</Text>
-        <Text color={THEME.primary} bold>
-          q
-        </Text>
-        <Text color={THEME.textDimmer}>to exit</Text>
+        <Text color={THEME.primary} bold>esc</Text>
+        <Text color={THEME.textDimmer}>or</Text>
+        <Text color={THEME.primary} bold>q</Text>
+        <Text color={THEME.textDimmer}>to go back</Text>
       </Box>
     </Box>
   );
@@ -168,10 +175,10 @@ export function ReviewDonePhase({ result, prInfo }: ReviewDonePhaseProps) {
         gap={2}
       >
         <Text color={THEME.textDimmer}>Press</Text>
-        <Text color={THEME.primary} bold>
-          q
-        </Text>
-        <Text color={THEME.textDimmer}>to exit</Text>
+        <Text color={THEME.primary} bold>esc</Text>
+        <Text color={THEME.textDimmer}>or</Text>
+        <Text color={THEME.primary} bold>q</Text>
+        <Text color={THEME.textDimmer}>to go back</Text>
       </Box>
     </Box>
   );

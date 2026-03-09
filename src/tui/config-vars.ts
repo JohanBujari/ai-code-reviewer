@@ -72,8 +72,9 @@ export function detectMissingVars(
   answers: Record<string, string>,
   saved: Record<string, string | undefined> = {},
 ): VarDef[] {
-  const lookup = (key: string) =>
-    answers[key] ?? saved[key] ?? process.env[key];
+  // Only check answers and saved config — not process.env, which may
+  // contain stale values from a previously configured profile.
+  const lookup = (key: string) => answers[key] ?? saved[key];
   const missing: VarDef[] = [];
   for (const def of COMMON_VARS) {
     if (!lookup(def.key)) missing.push(def);
