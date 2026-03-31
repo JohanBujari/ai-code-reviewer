@@ -149,13 +149,15 @@ On first run, the TUI prompts you to name your profile. On subsequent runs, you'
       "AZURE_DEVOPS_ORG": "my-work-org",
       "AZURE_DEVOPS_PAT": "pat-...",
       "AI_PROVIDER": "codex",
+      "CODEX_REASONING_EFFORT": "medium",
       "WATCH_REPOS": "ProjectA/id1/Repo1"
     },
     "client-x": {
       "AZURE_DEVOPS_ORG": "client-x-org",
       "AZURE_DEVOPS_PAT": "pat-...",
-      "AI_PROVIDER": "openai",
-      "OPENAI_API_KEY": "sk-..."
+      "AI_PROVIDER": "claude",
+      "CLAUDE_EFFORT": "high",
+      "WATCH_REPOS": "ProjectB/id2/Repo2"
     }
   }
 }
@@ -395,7 +397,7 @@ ai: {
 | `azureDevOps.pat` | `string`   | required  | Personal access token with Code (Read/Write) scope    |
 | `webhookSecret`   | `string`   | required  | Shared secret for webhook authentication              |
 | `ai`              | `AiConfig` | required  | AI provider configuration (see above)                 |
-| `maxFiles`        | `number`   | `30`      | Maximum files to review per PR                        |
+| `maxFiles`        | `number`   | `Infinity`| Maximum files to review per PR (no cap by default)    |
 | `maxDiffLength`   | `number`   | `10000`   | Max characters per file before truncation             |
 | `skipPatterns`    | `RegExp[]` | built-in  | Patterns for files to skip (lock files, images, etc.) |
 | `customPrompt`    | `string`   | built-in  | Override the system prompt for the AI reviewer        |
