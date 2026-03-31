@@ -1,4 +1,6 @@
 import { loadEnvConfigInteractive } from "../env";
+import { ensureCliProviderReady } from "../../ai/provider-auth";
+import { isCliAuthConfig } from "../../ai/provider-status";
 import { PrReviewer } from "../../reviewer";
 import type { Logger } from "../../types";
 
@@ -41,6 +43,10 @@ export async function reviewCommand(url: string, profile?: string): Promise<void
   });
 
   try {
+    if (isCliAuthConfig(config.ai)) {
+      await ensureCliProviderReady(config.ai);
+    }
+
     console.log(`Reviewing PR #${prId} in ${project}/${repoSlug}...`);
     const result = await reviewer.reviewPullRequest(project, repoSlug, prId);
     console.log(`\nComments posted: ${result.comments.length}`);

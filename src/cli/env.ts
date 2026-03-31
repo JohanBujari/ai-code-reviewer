@@ -43,16 +43,13 @@ function createEnvLookup(overrides: Record<string, string> = {}): EnvLookup {
 
 function getRequiredProviderKeys(provider: string): string[] {
   switch (provider) {
+    case "codex":
+    case "claude":
+      return [];
     case "openai":
       return ["OPENAI_API_KEY"];
     case "anthropic":
       return ["ANTHROPIC_API_KEY"];
-    case "azure-openai":
-      return [
-        "AZURE_OPENAI_ENDPOINT",
-        "AZURE_OPENAI_API_KEY",
-        "AZURE_OPENAI_DEPLOYMENT",
-      ];
     default:
       return [];
   }
@@ -150,9 +147,10 @@ export function buildConfig(
   const org = require("AZURE_DEVOPS_ORG");
   const pat = require("AZURE_DEVOPS_PAT");
   const provider = require("AI_PROVIDER") as
+    | "codex"
+    | "claude"
     | "openai"
-    | "anthropic"
-    | "azure-openai";
+    | "anthropic";
   const ai = buildAiConfig(provider, lookup, require);
 
   const base: BaseEnvConfig = { platform, azureDevOps: { org, pat }, ai };
@@ -190,29 +188,47 @@ function buildAiConfig(
   require: (key: string) => string,
 ): AiConfig {
   switch (provider) {
+    case "codex":
+      return {
+        transport: "provider-cli",
+        provider: "codex",
+        model: lookup("CODEX_MODEL"),
+        reasoningEffort: lookup("CODEX_REASONING_EFFORT") as
+          | "low"
+          | "medium"
+          | "high"
+          | "xhigh"
+          | undefined,
+      };
+    case "claude":
+      return {
+        transport: "provider-cli",
+        provider: "claude",
+        model: lookup("CLAUDE_MODEL"),
+        effort: lookup("CLAUDE_EFFORT") as
+          | "low"
+          | "medium"
+          | "high"
+          | "max"
+          | undefined,
+      };
     case "openai":
       return {
+        transport: "api-key",
         provider: "openai",
         apiKey: require("OPENAI_API_KEY"),
         model: lookup("OPENAI_MODEL"),
       };
     case "anthropic":
       return {
+        transport: "api-key",
         provider: "anthropic",
         apiKey: require("ANTHROPIC_API_KEY"),
         model: lookup("ANTHROPIC_MODEL"),
       };
-    case "azure-openai":
-      return {
-        provider: "azure-openai",
-        endpoint: require("AZURE_OPENAI_ENDPOINT"),
-        apiKey: require("AZURE_OPENAI_API_KEY"),
-        deployment: require("AZURE_OPENAI_DEPLOYMENT"),
-        apiVersion: lookup("AZURE_OPENAI_API_VERSION"),
-      };
     default:
       throw new Error(
-        `Unsupported AI_PROVIDER: "${provider}". Must be one of: openai, anthropic, azure-openai`,
+        `Unsupported AI_PROVIDER: "${provider}". Must be one of: codex, claude, openai, anthropic`,
       );
   }
 }

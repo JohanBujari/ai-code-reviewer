@@ -15,6 +15,10 @@ interface AppProps {
   orchestrator: WatcherOrchestrator;
 }
 
+type InputKey = {
+  escape?: boolean;
+};
+
 function App({ store, orchestrator }: AppProps) {
   const state = useAppState(store);
   const { exit } = useApp();
@@ -35,7 +39,7 @@ function App({ store, orchestrator }: AppProps) {
     };
   }, [orchestrator, exit]);
 
-  useInput((input) => {
+  useInput((input: string, _key: InputKey) => {
     if (input === "q") {
       orchestrator.stop();
       exit();
@@ -54,6 +58,21 @@ function App({ store, orchestrator }: AppProps) {
       orchestrator.forcePoll();
       store.addLog("info", "Manual refresh triggered");
     }
+    if (input === "x") {
+      const removed = orchestrator.resetReviewState();
+      if (removed > 0) {
+        store.addLog(
+          "info",
+          `Cleared ${removed} remembered review entr${removed === 1 ? "y" : "ies"} for the current provider. Re-queueing PRs...`,
+        );
+      } else {
+        store.addLog(
+          "info",
+          "No remembered reviews were found for the current provider.",
+        );
+      }
+      orchestrator.forcePoll();
+    }
   });
 
   return (
@@ -71,6 +90,7 @@ function App({ store, orchestrator }: AppProps) {
       />
       <ReviewProgress
         current={state.currentJob}
+        stage={state.currentStage}
         fileProgress={state.currentFileProgress}
       />
       <LogPanel logs={state.logs} />

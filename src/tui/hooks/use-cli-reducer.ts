@@ -1,6 +1,7 @@
 import { useReducer } from "react";
 import type { Phase } from "../cli-constants";
 import type { VarDef } from "../config-vars";
+import type { ProviderSnapshot } from "../../ai/provider-status";
 import type { ReviewResult } from "../../types";
 
 export interface CliState {
@@ -18,6 +19,13 @@ export interface CliState {
   manageMessage: { text: string; color: string } | null;
   isEditOnly: boolean;
   configOrigin: Phase;
+  providerSnapshot: ProviderSnapshot | null;
+  providerCheckLoading: boolean;
+  providerCheckContext: {
+    command: "watch" | "review";
+    answers: Record<string, string>;
+    origin: Phase;
+  } | null;
 }
 
 export type CliAction =
@@ -36,6 +44,10 @@ export type CliAction =
   | { type: "SET_MANAGE_MESSAGE"; message: { text: string; color: string } | null }
   | { type: "SET_EDIT_ONLY"; isEditOnly: boolean }
   | { type: "START_CONFIG"; vars: VarDef[]; answers: Record<string, string>; origin: Phase; isEditOnly?: boolean }
+  | { type: "START_PROVIDER_CHECK"; command: "watch" | "review"; answers: Record<string, string>; origin: Phase }
+  | { type: "SET_PROVIDER_LOADING"; loading: boolean }
+  | { type: "SET_PROVIDER_SNAPSHOT"; snapshot: ProviderSnapshot | null }
+  | { type: "CLEAR_PROVIDER_CHECK" }
   | { type: "BATCH"; actions: CliAction[] };
 
 const initialState: CliState = {
@@ -53,6 +65,9 @@ const initialState: CliState = {
   manageMessage: null,
   isEditOnly: false,
   configOrigin: "menu",
+  providerSnapshot: null,
+  providerCheckLoading: false,
+  providerCheckContext: null,
 };
 
 function reducer(state: CliState, action: CliAction): CliState {
@@ -104,6 +119,33 @@ function reducer(state: CliState, action: CliAction): CliState {
         configOrigin: action.origin,
         isEditOnly: action.isEditOnly ?? false,
         phase: "config",
+      };
+    case "START_PROVIDER_CHECK":
+      return {
+        ...state,
+        providerCheckContext: {
+          command: action.command,
+          answers: action.answers,
+          origin: action.origin,
+        },
+        providerSnapshot: null,
+        providerCheckLoading: true,
+        phase: "provider-check",
+      };
+    case "SET_PROVIDER_LOADING":
+      return { ...state, providerCheckLoading: action.loading };
+    case "SET_PROVIDER_SNAPSHOT":
+      return {
+        ...state,
+        providerSnapshot: action.snapshot,
+        providerCheckLoading: false,
+      };
+    case "CLEAR_PROVIDER_CHECK":
+      return {
+        ...state,
+        providerSnapshot: null,
+        providerCheckLoading: false,
+        providerCheckContext: null,
       };
     case "BATCH":
       return action.actions.reduce(reducer, state);

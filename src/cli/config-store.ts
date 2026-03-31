@@ -8,20 +8,28 @@ import {
 import { homedir } from "os";
 import { join } from "path";
 
-const CONFIG_DIR = join(homedir(), ".axiom");
-const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-const STATE_FILE = join(CONFIG_DIR, "axiom-state.json");
+function getConfigDirInternal(): string {
+  return process.env.AXIOM_CONFIG_DIR || join(homedir(), ".axiom");
+}
 
-// ── Keys that belong in `global` (shared across profiles) ──
+function getConfigFilePath(): string {
+  return join(getConfigDirInternal(), "config.json");
+}
 
-const GLOBAL_KEYS = new Set([
+function getStateFileInternal(): string {
+  return join(getConfigDirInternal(), "axiom-state.json");
+}
+
+// ── Legacy provider keys that may still exist in `global` ──
+
+const LEGACY_GLOBAL_PROVIDER_KEYS = new Set([
   "AI_PROVIDER",
+  "CODEX_MODEL",
+  "CODEX_REASONING_EFFORT",
+  "CLAUDE_MODEL",
+  "CLAUDE_EFFORT",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
-  "AZURE_OPENAI_ENDPOINT",
-  "AZURE_OPENAI_API_KEY",
-  "AZURE_OPENAI_DEPLOYMENT",
-  "AZURE_OPENAI_API_VERSION",
   "OPENAI_MODEL",
   "ANTHROPIC_MODEL",
 ]);
@@ -34,12 +42,12 @@ export interface SavedConfig {
   AZURE_DEVOPS_ORG?: string;
   AZURE_DEVOPS_PAT?: string;
   AI_PROVIDER?: string;
+  CODEX_MODEL?: string;
+  CODEX_REASONING_EFFORT?: string;
+  CLAUDE_MODEL?: string;
+  CLAUDE_EFFORT?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
-  AZURE_OPENAI_ENDPOINT?: string;
-  AZURE_OPENAI_API_KEY?: string;
-  AZURE_OPENAI_DEPLOYMENT?: string;
-  AZURE_OPENAI_API_VERSION?: string;
   OPENAI_MODEL?: string;
   ANTHROPIC_MODEL?: string;
   WATCH_REPOS?: string;
@@ -51,9 +59,9 @@ interface ProfileConfig {
   [key: string]: string | undefined;
 }
 
-/** v2 on-disk config structure */
-interface ConfigFileV2 {
-  version: 2;
+/** v3 on-disk config structure */
+interface ConfigFileV3 {
+  version: 3;
   activeProfile: string;
   global: ProfileConfig;
   profiles: Record<string, ProfileConfig>;
@@ -61,50 +69,100 @@ interface ConfigFileV2 {
 
 // ── Internal helpers ────────────────────────────────────────
 
-function migrateV1toV2(v1: SavedConfig): ConfigFileV2 {
-  const global: ProfileConfig = {};
-  const profile: ProfileConfig = {};
+function sanitizeProfileConfig(config: ProfileConfig): ProfileConfig {
+  const sanitized: ProfileConfig = {};
 
-  for (const [key, value] of Object.entries(v1)) {
+  for (const [key, value] of Object.entries(config)) {
     if (value === undefined) continue;
-    if (GLOBAL_KEYS.has(key)) {
-      global[key] = value;
-    } else {
-      profile[key] = value;
-    }
+    if (key.startsWith("AZURE_OPENAI_")) continue;
+    if (key === "AI_PROVIDER" && value === "azure-openai") continue;
+    sanitized[key] = value;
   }
 
+  return sanitized;
+}
+
+function migrateV1toV3(v1: SavedConfig): ConfigFileV3 {
   return {
-    version: 2,
+    version: 3,
     activeProfile: "default",
-    global,
-    profiles: { default: profile },
+    global: {},
+    profiles: { default: sanitizeProfileConfig(v1) },
   };
 }
 
-function loadConfigFile(): ConfigFileV2 {
-  try {
-    if (!existsSync(CONFIG_FILE)) {
-      return { version: 2, activeProfile: "default", global: {}, profiles: { default: {} } };
-    }
-    const raw = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
-    if (raw.version === 2) return raw as ConfigFileV2;
+function migrateToV3(raw: unknown): ConfigFileV3 {
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "version" in raw &&
+    (raw as { version?: number }).version === 3
+  ) {
+    const config = raw as ConfigFileV3;
+    return {
+      version: 3,
+      activeProfile: config.activeProfile ?? "default",
+      global: sanitizeProfileConfig(config.global ?? {}),
+      profiles: Object.fromEntries(
+        Object.entries(config.profiles ?? {}).map(([name, profile]) => [
+          name,
+          sanitizeProfileConfig(profile ?? {}),
+        ]),
+      ),
+    };
+  }
 
-    // v1 migration
-    const v2 = migrateV1toV2(raw as SavedConfig);
-    saveConfigFile(v2);
-    return v2;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "version" in raw &&
+    (raw as { version?: number }).version === 2
+  ) {
+    const config = raw as {
+      activeProfile?: string;
+      global?: ProfileConfig;
+      profiles?: Record<string, ProfileConfig>;
+    };
+    return {
+      version: 3,
+      activeProfile: config.activeProfile ?? "default",
+      global: sanitizeProfileConfig(config.global ?? {}),
+      profiles: Object.fromEntries(
+        Object.entries(config.profiles ?? { default: {} }).map(
+          ([name, profile]) => [name, sanitizeProfileConfig(profile ?? {})],
+        ),
+      ),
+    };
+  }
+
+  return migrateV1toV3(raw as SavedConfig);
+}
+
+function loadConfigFile(): ConfigFileV3 {
+  const configFile = getConfigFilePath();
+  try {
+    if (!existsSync(configFile)) {
+      return { version: 3, activeProfile: "default", global: {}, profiles: { default: {} } };
+    }
+    const raw = JSON.parse(readFileSync(configFile, "utf-8"));
+    const v3 = migrateToV3(raw);
+    if (JSON.stringify(raw) !== JSON.stringify(v3)) {
+      saveConfigFile(v3);
+    }
+    return v3;
   } catch {
-    return { version: 2, activeProfile: "default", global: {}, profiles: { default: {} } };
+    return { version: 3, activeProfile: "default", global: {}, profiles: { default: {} } };
   }
 }
 
-function saveConfigFile(config: ConfigFileV2): void {
+function saveConfigFile(config: ConfigFileV3): void {
+  const configDir = getConfigDirInternal();
+  const configFile = getConfigFilePath();
   try {
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
     }
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+    writeFileSync(configFile, JSON.stringify(config, null, 2), "utf-8");
   } catch (err) {
     console.error(`Failed to save config: ${err}`);
   }
@@ -127,6 +185,31 @@ export function loadProfileOnlyConfig(profileName?: string): SavedConfig {
   return { ...(config.profiles[name] ?? {}) };
 }
 
+/** Load profile config for TUI profile selection.
+ *  If a legacy config still stores provider settings in `global` and the
+ *  selected profile does not yet have its own AI provider, fall back to the
+ *  merged view so existing profiles do not appear blank.
+ */
+export function loadProfileSelectionConfig(profileName?: string): SavedConfig {
+  const config = loadConfigFile();
+  const name = profileName ?? config.activeProfile ?? "default";
+  const profile = config.profiles[name] ?? {};
+
+  if (profile.AI_PROVIDER) {
+    return { ...profile };
+  }
+
+  const hasLegacyGlobalProvider = [...LEGACY_GLOBAL_PROVIDER_KEYS].some(
+    (key) => config.global[key] !== undefined,
+  );
+
+  if (!hasLegacyGlobalProvider) {
+    return { ...profile };
+  }
+
+  return { ...config.global, ...profile };
+}
+
 /** Save flat config directly (kept for backward compat — prefers mergeAndSaveConfig).
  *  All keys go to the active profile; profile overrides global when loading. */
 export function saveConfig(config: SavedConfig): void {
@@ -138,6 +221,7 @@ export function saveConfig(config: SavedConfig): void {
     if (value === undefined) continue;
     file.profiles[name]![key] = value;
   }
+  file.profiles[name] = sanitizeProfileConfig(file.profiles[name] ?? {});
   saveConfigFile(file);
 }
 
@@ -155,15 +239,17 @@ export function mergeAndSaveConfig(
     config.profiles[name]![key] = value;
   }
 
+  config.profiles[name] = sanitizeProfileConfig(config.profiles[name] ?? {});
   saveConfigFile(config);
 }
 
 /** Remove saved config — a specific profile, or the entire file if '*' */
 export function clearConfig(profileName?: string): boolean {
+  const configFile = getConfigFilePath();
   try {
     if (profileName === "*") {
-      if (existsSync(CONFIG_FILE)) {
-        unlinkSync(CONFIG_FILE);
+      if (existsSync(configFile)) {
+        unlinkSync(configFile);
         return true;
       }
       return false;
@@ -176,12 +262,12 @@ export function clearConfig(profileName?: string): boolean {
 
 /** Get config file path (for display purposes) */
 export function getConfigPath(): string {
-  return CONFIG_FILE;
+  return getConfigFilePath();
 }
 
 /** Get default state file path (~/.axiom/axiom-state.json) */
 export function getDefaultStatePath(): string {
-  return STATE_FILE;
+  return getStateFileInternal();
 }
 
 // ── Profile management ──────────────────────────────────────

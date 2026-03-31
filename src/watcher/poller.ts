@@ -13,7 +13,7 @@ export class Poller {
     private readonly stateManager: StateManager,
     private readonly repos: WatchedRepo[],
     private readonly intervalMs: number,
-    private readonly onEvent: (event: WatcherEvent) => void,
+    private readonly onEvent: (event: WatcherEvent) => boolean | void,
     private readonly logger: Logger,
   ) {}
 
@@ -102,8 +102,10 @@ export class Poller {
                 status: "queued",
                 queuedAt: Date.now(),
               };
-              totalNewJobs++;
-              this.onEvent({ type: "review-queued", job });
+              const accepted = this.onEvent({ type: "review-queued", job });
+              if (accepted !== false) {
+                totalNewJobs++;
+              }
             } catch (error) {
               this.logger.warn(
                 `Failed to check iterations for PR #${pr.pullRequestId} in ${repo.project}/${repo.repoName}: ${error}`,

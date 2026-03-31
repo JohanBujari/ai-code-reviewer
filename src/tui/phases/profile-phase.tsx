@@ -123,7 +123,7 @@ export function ManageProfileActionPhase({ profileName, onEdit, onDelete, onBack
       </Box>
       <SelectInput
         items={[
-          { label: 'Edit credentials', value: 'edit', icon: '\u270e', description: 'Re-enter keys and settings' },
+          { label: 'Edit profile', value: 'edit', icon: '\u270e', description: 'Update provider, credentials, and settings' },
           { label: 'Delete profile', value: 'delete', icon: '\u2716', description: 'Remove this profile' },
         ]}
         onSelect={(item) => {

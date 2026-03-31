@@ -12,10 +12,20 @@ export class ReviewQueue {
     private readonly onEvent: (event: WatcherEvent) => void,
   ) {}
 
-  enqueue(job: ReviewJob): void {
-    if (this.jobs.some((j) => j.id === job.id)) return;
+  enqueue(job: ReviewJob): boolean {
+    const existingIndex = this.jobs.findIndex((j) => j.id === job.id);
+    if (existingIndex >= 0) {
+      const existing = this.jobs[existingIndex];
+      if (existing.status === 'queued' || existing.status === 'in-progress') {
+        return false;
+      }
+
+      this.jobs.splice(existingIndex, 1);
+    }
+
     this.jobs.push(job);
     this.processNext();
+    return true;
   }
 
   get pending(): ReviewJob[] {
@@ -51,6 +61,26 @@ export class ReviewQueue {
         job.prId,
         job.prTitle,
         job.prDescription,
+        (progress) => {
+          if (progress.kind === 'stage') {
+            this.onEvent({
+              type: 'review-stage',
+              jobId: job.id,
+              label: progress.label,
+              detail: progress.detail,
+            });
+            return;
+          }
+
+          job.filesReviewed = progress.fileIndex + 1;
+          this.onEvent({
+            type: 'review-file-progress',
+            jobId: job.id,
+            filePath: progress.filePath,
+            fileIndex: progress.fileIndex,
+            totalFiles: progress.totalFiles,
+          });
+        },
       );
 
       job.status = 'completed';

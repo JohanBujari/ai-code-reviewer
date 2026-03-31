@@ -59,7 +59,10 @@ export { PrReviewer } from "./reviewer";
 export type {
   PrReviewerOptions,
   AiConfig,
-  AzureOpenAiConfig,
+  CodexCliConfig,
+  ClaudeCliConfig,
+  CodexReasoningEffort,
+  ClaudeEffort,
   OpenAiConfig,
   AnthropicConfig,
 } from "./config";

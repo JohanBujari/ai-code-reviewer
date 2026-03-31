@@ -89,32 +89,16 @@ const COMMON_VARS: VarDef[] = [
     key: "AI_PROVIDER",
     label: "AI Provider",
     type: "select",
-    choices: ["openai", "anthropic", "azure-openai"],
+    choices: ["codex", "claude", "openai", "anthropic"],
   },
 ];
 
 const PROVIDER_VARS: Record<string, VarDef[]> = {
+  codex: [],
+  claude: [],
   openai: [{ key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" }],
   anthropic: [
     { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "secret" },
-  ],
-  "azure-openai": [
-    {
-      key: "AZURE_OPENAI_ENDPOINT",
-      label: "Azure OpenAI Endpoint",
-      type: "text",
-      hint: "e.g. https://your-resource.openai.azure.com",
-    },
-    {
-      key: "AZURE_OPENAI_API_KEY",
-      label: "Azure OpenAI API Key",
-      type: "secret",
-    },
-    {
-      key: "AZURE_OPENAI_DEPLOYMENT",
-      label: "Azure OpenAI Deployment",
-      type: "text",
-    },
   ],
 };
 

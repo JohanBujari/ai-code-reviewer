@@ -7,8 +7,7 @@ import { WatcherOrchestrator } from "../watcher/orchestrator";
 import { startTui } from "./app";
 import { PrReviewer } from "../reviewer";
 import {
-  loadSavedConfig,
-  loadProfileOnlyConfig,
+  loadProfileSelectionConfig,
   mergeAndSaveConfig,
   setActiveProfile,
   createProfile,
@@ -16,11 +15,16 @@ import {
   deleteProfile,
 } from "../cli/config-store";
 import type { BaseEnvConfig, WatcherEnvConfig } from "../cli/env";
-import type { Logger } from "../types";
+import type { Logger, ReviewProgressUpdate } from "../types";
 import { THEME } from "../shared/theme";
+import { probeCliProvider } from "../ai/provider-auth";
+import {
+  isCliAuthConfig,
+  type ProviderSnapshot,
+} from "../ai/provider-status";
 
 import { useCliReducer } from "./hooks/use-cli-reducer";
-import { PR_URL_REGEX } from "./cli-constants";
+import { PR_URL_REGEX, type Phase } from "./cli-constants";
 import {
   detectMissingVars,
   buildConfigFromEnv,
@@ -46,6 +50,7 @@ import {
   ReviewErrorPhase,
 } from "./phases/review-phase";
 import { LaunchingPhase } from "./phases/launching-phase";
+import { ProviderCheckPhase } from "./phases/provider-check-phase";
 
 // ── Single-screen App ──
 
@@ -57,6 +62,10 @@ interface CliAppProps {
   options: { interval?: string; stateFile?: string };
 }
 
+type InputKey = {
+  escape?: boolean;
+};
+
 function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }: CliAppProps) {
   const { exit } = useApp();
   const [state, dispatch] = useCliReducer({
@@ -65,7 +74,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
   });
 
   // Handle q/Esc to go back on terminal and info phases
-  useInput((input, key) => {
+  useInput((input: string, key: InputKey) => {
     if (state.phase === "review-done" && (key.escape || input === "q")) {
       dispatch({ type: "SET_PHASE", phase: "menu" });
     }
@@ -150,7 +159,18 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
           ai: config.ai,
           logger,
         });
-        const result = await reviewer.reviewPullRequest(project, repoSlug, prId);
+        const result = await reviewer.reviewPullRequest(
+          project,
+          repoSlug,
+          prId,
+          undefined,
+          undefined,
+          (progress: ReviewProgressUpdate) =>
+            dispatch({
+              type: "SET_REVIEW_STATUS",
+              status: formatReviewStatus(progress),
+            }),
+        );
         dispatch({ type: "REVIEW_COMPLETE", result });
       } catch (err) {
         dispatch({ type: "REVIEW_ERROR", error: err instanceof Error ? err.message : String(err) });
@@ -190,12 +210,44 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
     [state.selectedProfile, state.isEditOnly, reviewUrl, launchWatch, startReview],
   );
 
+  const beginCommand = useCallback(
+    (
+      cmd: "watch" | "review",
+      answers: Record<string, string>,
+      origin: Phase,
+    ) => {
+      dispatch({ type: "SET_CONFIG_ANSWERS", answers });
+
+      try {
+        const config = buildConfigFromEnv(answers, cmd, options);
+        if (isCliAuthConfig(config.ai)) {
+          dispatch({
+            type: "START_PROVIDER_CHECK",
+            command: cmd,
+            answers,
+            origin,
+          });
+          return;
+        }
+      } catch (err) {
+        dispatch({
+          type: "REVIEW_ERROR",
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      finishConfig(cmd, answers);
+    },
+    [finishConfig, options],
+  );
+
   const editProfile = useCallback(
     (profileName: string) => {
       setActiveProfile(profileName);
       dispatch({ type: "SELECT_PROFILE", profile: profileName });
 
-      const saved = loadSavedConfig(profileName);
+      const saved = loadProfileSelectionConfig(profileName);
       const preAnswers = loadProfileAnswers(saved);
       dispatch({
         type: "START_CONFIG",
@@ -213,15 +265,11 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       setActiveProfile(profileName);
       dispatch({ type: "SELECT_PROFILE", profile: profileName });
 
-      // Use profile-only config for missing detection so globals
-      // don't mask fields the user hasn't explicitly set on this profile.
-      const profileOnly = loadProfileOnlyConfig(profileName);
-      const preAnswers = loadProfileAnswers(profileOnly);
-      const missing = detectMissingVars(cmd, preAnswers, profileOnly);
+      const saved = loadProfileSelectionConfig(profileName);
+      const preAnswers = loadProfileAnswers(saved);
+      const missing = detectMissingVars(cmd, preAnswers, saved);
       if (missing.length === 0) {
-        // All fields are set on this profile — use full merged config to launch
-        const saved = loadSavedConfig(profileName);
-        finishConfig(cmd, loadProfileAnswers(saved));
+        beginCommand(cmd, loadProfileAnswers(saved), "profile-select");
         return;
       }
       dispatch({
@@ -231,7 +279,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         origin: "profile-select",
       });
     },
-    [finishConfig],
+    [beginCommand],
   );
 
   const startConfig = useCallback(
@@ -262,7 +310,7 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       dotenv.config();
       setActiveProfile(initialProfile);
       dispatch({ type: "SELECT_PROFILE", profile: initialProfile });
-      const saved = loadSavedConfig(initialProfile);
+      const saved = loadProfileSelectionConfig(initialProfile);
       const preAnswers = loadProfileAnswers(saved);
       dispatch({
         type: "START_CONFIG",
@@ -309,13 +357,13 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       }
 
       if (nextIndex >= state.missingVars.length) {
-        finishConfig(state.command!, updated);
+        beginCommand(state.command!, updated, "config");
       } else {
         dispatch({ type: "SET_CONFIG_ANSWERS", answers: updated });
         dispatch({ type: "SET_CONFIG_INDEX", index: nextIndex });
       }
     },
-    [state.missingVars, state.configIndex, state.configAnswers, state.command, finishConfig],
+    [state.missingVars, state.configIndex, state.configAnswers, state.command, beginCommand],
   );
 
   const handleConfigBack = useCallback(() => {
@@ -345,6 +393,55 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
 
     dispatch({ type: "CONFIG_BACK", prevIndex, answers: updated, vars: filteredVars });
   }, [state.configIndex, state.missingVars, state.configAnswers, state.configOrigin]);
+
+  const refreshProviderCheck = useCallback(async () => {
+    const context = state.providerCheckContext;
+    if (!context) return;
+
+    dispatch({ type: "SET_PROVIDER_LOADING", loading: true });
+
+    try {
+      const config = buildConfigFromEnv(context.answers, context.command, options);
+      if (!isCliAuthConfig(config.ai)) {
+        finishConfig(context.command, context.answers);
+        return;
+      }
+
+      const snapshot = await probeCliProvider(config.ai);
+      dispatch({ type: "SET_PROVIDER_SNAPSHOT", snapshot });
+    } catch (err) {
+      const provider = context.answers["AI_PROVIDER"] === "claude"
+        ? "claude"
+        : "codex";
+      const snapshot: ProviderSnapshot = {
+        provider,
+        installed: true,
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: err instanceof Error ? err.message : String(err),
+        checkedAt: new Date().toISOString(),
+      };
+      dispatch({ type: "SET_PROVIDER_SNAPSHOT", snapshot });
+    }
+  }, [state.providerCheckContext, options, finishConfig]);
+
+  const continueFromProviderCheck = useCallback(() => {
+    const context = state.providerCheckContext;
+    if (!context) return;
+    finishConfig(context.command, context.answers);
+  }, [state.providerCheckContext, finishConfig]);
+
+  const backFromProviderCheck = useCallback(() => {
+    const origin = state.providerCheckContext?.origin ?? "menu";
+    dispatch({
+      type: "BATCH",
+      actions: [
+        { type: "CLEAR_PROVIDER_CHECK" },
+        { type: "SET_PHASE", phase: origin },
+      ],
+    });
+  }, [state.providerCheckContext]);
 
   // ── Render ──
 
@@ -431,6 +528,16 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
         />
       )}
 
+      {state.phase === "provider-check" && (
+        <ProviderCheckPhase
+          snapshot={state.providerSnapshot}
+          loading={state.providerCheckLoading}
+          onRefresh={refreshProviderCheck}
+          onContinue={continueFromProviderCheck}
+          onBack={backFromProviderCheck}
+        />
+      )}
+
       {state.phase === "review-url" && (
         <ReviewUrlPhase
           onSubmit={(url) => startReview(url, state.configAnswers)}
@@ -453,6 +560,16 @@ function CliApp({ initialCommand, initialProfile, reviewUrl, editMode, options }
       {state.phase === "launching-watch" && <LaunchingPhase />}
     </Box>
   );
+}
+
+function formatReviewStatus(progress: ReviewProgressUpdate): string {
+  if (progress.kind === "file") {
+    return `[review] downloading file diffs (${progress.fileIndex + 1}/${progress.totalFiles}) • ${progress.filePath}`;
+  }
+
+  return progress.detail
+    ? `[review] ${progress.label} (${progress.detail})`
+    : `[review] ${progress.label}`;
 }
 
 // ── Entry ──

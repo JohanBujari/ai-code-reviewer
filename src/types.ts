@@ -58,6 +58,19 @@ export interface ReviewResult {
   comments: ReviewComment[];
 }
 
+export type ReviewProgressUpdate =
+  | {
+      kind: "stage";
+      label: string;
+      detail?: string;
+    }
+  | {
+      kind: "file";
+      filePath: string;
+      fileIndex: number;
+      totalFiles: number;
+    };
+
 /** Azure DevOps comment thread context */
 export interface ThreadContext {
   filePath: string;

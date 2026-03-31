@@ -22,7 +22,7 @@ flowchart TB
 
     subgraph External["External Services"]
         ADO["Azure DevOps API"]
-        AI["AI Provider\n(OpenAI/Anthropic/Azure)"]
+        AI["AI Provider\n(OpenAI/Anthropic/Codex/Claude)"]
     end
 
     Webhook --> Reviewer
@@ -85,10 +85,10 @@ flowchart TB
              │                              │
              ▼                              ▼
      ┌────────────────┐             ┌────────────────┐
-     │ Azure DevOps   │             │ Azure OpenAI   │
+     │ Azure DevOps   │             │ AI Providers   │
      │ REST API       │             │ OpenAI /       │
-     │ (PRs, files,   │             │ Anthropic      │
-     │  comments)     │             │                │
+     │ (PRs, files,   │             │ Anthropic /    │
+     │  comments)     │             │ Codex / Claude │
      └────────────────┘             └────────────────┘
 ```
 
@@ -107,14 +107,17 @@ flowchart TB
    └─ getFileContent()      → actual file diffs (batched)
 
 3. FILTER
-   ├─ Skip: lock files, minified, images, dist/, node_modules/
-   ├─ Cap:  maxFiles (default 30)
+   ├─ Reviewable: remove deleted/skipped files (lock files, images, dist/, node_modules/)
+   ├─ Cap:        maxFiles (default 30)
    └─ Truncate: maxDiffLength per file
 
 4. AI REVIEW
-   PrReviewer → AiProvider (Azure OpenAI | OpenAI | Anthropic)
+   PrReviewer → AiProvider (Codex CLI | Claude Code | OpenAI | Anthropic)
    ├─ Chunk files if too large
-   ├─ Build prompt (system + file diffs)
+   ├─ API-key providers use the tool-backed prompt path
+   ├─ Codex/Claude use an embedded review packet prompt path
+   ├─ CLI chunking uses fully rendered prompt size, so files per chunk vary
+   ├─ Codex reasoning effort and Claude effort are configurable
    └─ Parse JSON response → { comments[] }
 
 5. POST RESULTS
@@ -131,19 +134,27 @@ flowchart TB
 | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | **PrReviewer**        | Orchestrates the full review: fetch → filter → AI → post. Handles webhook verification, deduplication. |
 | **AzureDevOpsClient** | All Azure DevOps API calls (PRs, iterations, file content, comments, status).                          |
-| **AiProvider**        | Abstract interface; implementations for Azure OpenAI, OpenAI, Anthropic.                               |
+| **AiProvider**        | Abstract interface; implementations for Codex CLI, Claude Code, OpenAI, and Anthropic.                |
 | **Poller**            | (Watch mode) Periodically lists active PRs, detects new ones, enqueues for review.                     |
 | **ReviewQueue**       | (Watch mode) Serializes review jobs, processes one at a time.                                          |
-| **StateManager**      | (Watch mode) Persists reviewed PR IDs to avoid re-reviewing.                                           |
+| **StateManager**      | (Watch mode) Persists reviewed PR iterations per provider to avoid re-reviewing.                     |
 | **TuiStore / TUI**    | (Watch mode) Terminal UI showing repos, queue, logs, progress.                                         |
 
 ## External Dependencies
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ Azure DevOps    │     │ AI APIs         │     │ Your Server     │
-│ • Service Hooks │     │ • Azure OpenAI  │     │ • Webhook route  │
-│ • REST API      │     │ • OpenAI        │     │ • Express/      │
-│ • PAT auth      │     │ • Anthropic     │     │   Fastify/Nest  │
+│ Azure DevOps    │     │ AI Providers    │     │ Your Server     │
+│ • Service Hooks │     │ • Codex CLI     │     │ • Webhook route │
+│ • REST API      │     │ • Claude Code   │     │ • Express/      │
+│ • PAT auth      │     │ • OpenAI        │     │   Fastify/Nest  │
+│                 │     │ • Anthropic     │     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
+
+## Provider-CLI Notes
+
+- Codex and Claude do not use the in-process tool-calling path used by OpenAI/Anthropic API-key mode.
+- Instead, Axiom builds an embedded review packet containing project context, changed-line metadata, existing PR thread summaries, and file diffs.
+- The TUI progress copy reflects three review-scope counts: total changed files, reviewable files after filtering, and the capped file count actually selected for review.
+- Codex supports `reasoningEffort: low|medium|high|xhigh`; Claude supports `effort: low|medium|high|max`.

@@ -59,10 +59,22 @@ export function ConfigPhase({ missingVars, configIndex, configAnswers, onAnswer,
                 {currentVar.label}
               </Text>
               <SelectInput
-                items={(currentVar.choices ?? []).map((c) => ({
-                  label: c,
-                  value: c,
-                }))}
+                items={[
+                  ...(currentVar.optional
+                    ? [
+                        {
+                          label: "Use default",
+                          value: "",
+                          description: currentVar.hint ?? "Leave this unset",
+                        },
+                      ]
+                    : []),
+                  ...(currentVar.selectItems ??
+                    (currentVar.choices ?? []).map((c) => ({
+                      label: c,
+                      value: c,
+                    }))),
+                ]}
                 onSelect={(item) => onAnswer(item.value)}
                 onBack={onBack}
               />

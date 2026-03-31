@@ -14,6 +14,11 @@ export interface TuiState {
     fileIndex: number;
     totalFiles: number;
   };
+  currentStage?: {
+    label: string;
+    detail?: string;
+    updatedAt: number;
+  };
   logs: Array<{ timestamp: number; level: 'info' | 'warn' | 'error'; message: string }>;
   errors: Array<{ timestamp: number; message: string }>;
 }
@@ -53,7 +58,22 @@ export class TuiStore extends EventEmitter {
         this.state.currentJob = event.job;
         this.state.pendingJobs = this.state.pendingJobs.filter((j) => j.id !== event.job.id);
         this.state.currentFileProgress = undefined;
+        this.state.currentStage = {
+          label: 'Starting review',
+          updatedAt: Date.now(),
+        };
         this.addLog('info', `Reviewing PR #${event.job.prId}: ${event.job.prTitle}`);
+        break;
+
+      case 'review-stage':
+        if (this.state.currentJob?.id === event.jobId) {
+          this.state.currentFileProgress = undefined;
+          this.state.currentStage = {
+            label: event.label,
+            detail: event.detail,
+            updatedAt: Date.now(),
+          };
+        }
         break;
 
       case 'review-file-progress':
@@ -62,12 +82,18 @@ export class TuiStore extends EventEmitter {
           fileIndex: event.fileIndex,
           totalFiles: event.totalFiles,
         };
+        this.state.currentStage = {
+          label: 'Downloading file diffs',
+          detail: `${event.fileIndex + 1}/${event.totalFiles} • ${event.filePath}`,
+          updatedAt: Date.now(),
+        };
         break;
 
       case 'review-complete':
         this.addLog('info', `Completed PR #${event.job.prId}: ${event.job.commentsPosted ?? 0} comments`);
         this.state.currentJob = undefined;
         this.state.currentFileProgress = undefined;
+        this.state.currentStage = undefined;
         this.state.completedJobs.unshift(event.job);
         if (this.state.completedJobs.length > MAX_COMPLETED) {
           this.state.completedJobs = this.state.completedJobs.slice(0, MAX_COMPLETED);
@@ -78,6 +104,7 @@ export class TuiStore extends EventEmitter {
         this.addLog('error', `PR #${event.job.prId} failed: ${event.error}`);
         this.state.currentJob = undefined;
         this.state.currentFileProgress = undefined;
+        this.state.currentStage = undefined;
         this.state.completedJobs.unshift(event.job);
         if (this.state.completedJobs.length > MAX_COMPLETED) {
           this.state.completedJobs = this.state.completedJobs.slice(0, MAX_COMPLETED);

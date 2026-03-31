@@ -13,6 +13,20 @@ interface TextInputProps {
   accentColor?: string;
 }
 
+type InputKey = {
+  return?: boolean;
+  backspace?: boolean;
+  delete?: boolean;
+  escape?: boolean;
+  ctrl?: boolean;
+  meta?: boolean;
+  upArrow?: boolean;
+  downArrow?: boolean;
+  leftArrow?: boolean;
+  rightArrow?: boolean;
+  tab?: boolean;
+};
+
 export function TextInput({ label, hint, mask, optional, validate, onSubmit, onBack, accentColor = THEME.primary }: TextInputProps) {
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +38,7 @@ export function TextInput({ label, hint, mask, optional, validate, onSubmit, onB
     return () => clearInterval(timer);
   }, []);
 
-  useInput((input, key) => {
+  useInput((input: string, key: InputKey) => {
     if (key.return) {
       // Allow empty submit for optional fields
       if (value.length === 0 && !optional) return;

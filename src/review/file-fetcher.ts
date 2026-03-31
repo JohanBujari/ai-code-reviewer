@@ -30,15 +30,28 @@ export async function fetchFileDiffs(
   baseCommitId: string,
   headCommitId: string,
   maxDiffLength: number,
+  onFileProgress?: (progress: {
+    filePath: string;
+    fileIndex: number;
+    totalFiles: number;
+  }) => void,
 ): Promise<PrFileChange[]> {
   const fileChanges: PrFileChange[] = [];
+  const totalFiles = changes.length;
 
   for (let i = 0; i < changes.length; i += DEFAULTS.fileFetchBatchSize) {
     const batch = changes.slice(i, i + DEFAULTS.fileFetchBatchSize);
     const results = await Promise.all(
-      batch.map(async (change) => {
+      batch.map(async (change, batchIndex) => {
         const filePath = change.item.path;
         const isAdd = change.changeType === "add";
+        const fileIndex = i + batchIndex;
+
+        onFileProgress?.({
+          filePath,
+          fileIndex,
+          totalFiles,
+        });
 
         const [baseContent, headContent] = await Promise.all([
           isAdd

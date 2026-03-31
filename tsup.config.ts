@@ -26,7 +26,6 @@ export default defineConfig([
       'ai',
       '@ai-sdk/openai',
       '@ai-sdk/anthropic',
-      '@ai-sdk/azure',
       'ink',
       'react',
       'commander',

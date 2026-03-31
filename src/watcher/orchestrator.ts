@@ -19,14 +19,20 @@ export interface OrchestratorConfig {
 export class WatcherOrchestrator extends EventEmitter {
   private readonly poller: Poller;
   private readonly queue: ReviewQueue;
+  private readonly reviewer: PrReviewer;
   private readonly stateManager: StateManager;
+  private readonly repos: WatchedRepo[];
 
   constructor(config: OrchestratorConfig, logger: Logger) {
     super();
-    this.stateManager = new StateManager(config.stateFilePath);
+    this.repos = config.repos;
+    this.stateManager = new StateManager(
+      config.stateFilePath,
+      config.ai.provider,
+    );
 
     const devOps = new AzureDevOpsClient(config.azureDevOps.org, config.azureDevOps.pat, logger);
-    const reviewer = new PrReviewer({
+    this.reviewer = new PrReviewer({
       azureDevOps: config.azureDevOps,
       webhookSecret: '',
       ai: config.ai,
@@ -35,7 +41,7 @@ export class WatcherOrchestrator extends EventEmitter {
 
     const emitEvent = (event: WatcherEvent) => this.emit('event', event);
 
-    this.queue = new ReviewQueue(reviewer, this.stateManager, emitEvent);
+    this.queue = new ReviewQueue(this.reviewer, this.stateManager, emitEvent);
 
     this.poller = new Poller(
       devOps,
@@ -43,10 +49,14 @@ export class WatcherOrchestrator extends EventEmitter {
       config.repos,
       config.pollIntervalMs,
       (event) => {
-        emitEvent(event);
         if (event.type === 'review-queued') {
-          this.queue.enqueue(event.job);
+          const accepted = this.queue.enqueue(event.job);
+          if (accepted) {
+            emitEvent(event);
+          }
+          return accepted;
         }
+        emitEvent(event);
       },
       logger,
     );
@@ -75,6 +85,12 @@ export class WatcherOrchestrator extends EventEmitter {
 
   forcePoll(): void {
     this.poller.forcePoll();
+  }
+
+  resetReviewState(): number {
+    const cleared = this.stateManager.clearReviewedForRepos(this.repos);
+    this.reviewer.clearRecentReviews();
+    return cleared;
   }
 
   getQueueStatus(): { pending: ReviewJob[]; current?: ReviewJob; completed: ReviewJob[] } {

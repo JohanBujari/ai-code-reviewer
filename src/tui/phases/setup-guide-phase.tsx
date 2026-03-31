@@ -49,7 +49,10 @@ export function SetupGuidePhase() {
             {"   "}Select "Watch repositories" or "Review a PR" from the main menu.
           </Text>
           <Text color={THEME.textDim} wrap="wrap">
-            {"   "}Enter your organization name, paste the PAT, and select an AI provider.
+            {"   "}Enter your organization name, paste the PAT, and choose an AI provider.
+          </Text>
+          <Text color={THEME.textDim} wrap="wrap">
+            {"   "}For Codex run "codex login". For Claude Code run "claude" and then "/login".
           </Text>
         </Box>
 

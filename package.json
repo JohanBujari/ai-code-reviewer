@@ -1,7 +1,7 @@
 {
   "name": "axiom-pr",
   "version": "1.0.0",
-  "description": "AI-powered pull request reviewer for Azure DevOps. Supports Azure OpenAI, OpenAI, and Claude. Includes CLI watcher with TUI.",
+  "description": "AI-powered pull request reviewer for Azure DevOps. Supports Codex CLI, Claude Code, OpenAI, and Anthropic. Includes CLI watcher with TUI.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "node test/smoke.mjs",
+    "cli": "npm run build && node dist/cli.mjs",
+    "test": "node -e \"require('fs').rmSync('.test-dist', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -29,6 +30,7 @@
     "pull-request",
     "code-review",
     "ai",
+    "codex",
     "openai",
     "claude",
     "anthropic",
@@ -53,7 +55,6 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
-    "@ai-sdk/azure": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
     "ai": "^4.0.0",
     "commander": "^12.0.0",

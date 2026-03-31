@@ -1,11 +1,20 @@
 import { buildConfig } from "../cli/env";
 import type { BaseEnvConfig, WatcherEnvConfig } from "../cli/env";
 
+interface SelectChoice {
+  label: string;
+  value: string;
+  description?: string;
+  icon?: string;
+  kind?: "item" | "heading";
+}
+
 export interface VarDef {
   key: string;
   label: string;
   type: "text" | "secret" | "select";
   choices?: string[];
+  selectItems?: SelectChoice[];
   hint?: string;
   /** If true, the field is shown in config but not treated as required */
   optional?: boolean;
@@ -18,7 +27,38 @@ export const COMMON_VARS: VarDef[] = [
     key: "AI_PROVIDER",
     label: "AI Provider",
     type: "select",
-    choices: ["openai", "anthropic", "azure-openai"],
+    selectItems: [
+      {
+        label: "Subscription",
+        value: "__provider_group_subscription__",
+        kind: "heading",
+      },
+      {
+        label: "codex",
+        value: "codex",
+        description: "Use your Codex or ChatGPT login",
+      },
+      {
+        label: "claude",
+        value: "claude",
+        description: "Use your Claude Code subscription login",
+      },
+      {
+        label: "API Keys",
+        value: "__provider_group_api_keys__",
+        kind: "heading",
+      },
+      {
+        label: "openai",
+        value: "openai",
+        description: "Provide an OpenAI API key",
+      },
+      {
+        label: "anthropic",
+        value: "anthropic",
+        description: "Provide an Anthropic API key",
+      },
+    ],
   },
 ];
 
@@ -30,6 +70,40 @@ export const PLATFORM_VARS: Record<string, VarDef[]> = {
 };
 
 export const PROVIDER_VARS: Record<string, VarDef[]> = {
+  codex: [
+    {
+      key: "CODEX_MODEL",
+      label: "Model",
+      type: "text",
+      hint: "optional, e.g. gpt-5.2",
+      optional: true,
+    },
+    {
+      key: "CODEX_REASONING_EFFORT",
+      label: "Thinking Budget",
+      type: "select",
+      choices: ["low", "medium", "high", "xhigh"],
+      hint: "optional, default: medium",
+      optional: true,
+    },
+  ],
+  claude: [
+    {
+      key: "CLAUDE_MODEL",
+      label: "Model",
+      type: "text",
+      hint: "optional, e.g. sonnet",
+      optional: true,
+    },
+    {
+      key: "CLAUDE_EFFORT",
+      label: "Thinking Budget",
+      type: "select",
+      choices: ["low", "medium", "high", "max"],
+      hint: "optional, default: medium",
+      optional: true,
+    },
+  ],
   openai: [
     { key: "OPENAI_API_KEY", label: "OpenAI API Key", type: "secret" },
     { key: "OPENAI_MODEL", label: "Model", type: "text", hint: "e.g. gpt-5.2 (default: gpt-5.2)", optional: true },
@@ -37,24 +111,6 @@ export const PROVIDER_VARS: Record<string, VarDef[]> = {
   anthropic: [
     { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "secret" },
     { key: "ANTHROPIC_MODEL", label: "Model", type: "text", hint: "e.g. claude-sonnet-4-5 (default: claude-sonnet-4-5)", optional: true },
-  ],
-  "azure-openai": [
-    {
-      key: "AZURE_OPENAI_ENDPOINT",
-      label: "Azure OpenAI Endpoint",
-      type: "text",
-      hint: "e.g. https://your-resource.openai.azure.com",
-    },
-    {
-      key: "AZURE_OPENAI_API_KEY",
-      label: "Azure OpenAI API Key",
-      type: "secret",
-    },
-    {
-      key: "AZURE_OPENAI_DEPLOYMENT",
-      label: "Azure OpenAI Deployment",
-      type: "text",
-    },
   ],
 };
 

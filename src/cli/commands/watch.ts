@@ -1,4 +1,6 @@
 import { loadEnvConfigInteractive, type WatcherEnvConfig } from "../env";
+import { ensureCliProviderReady } from "../../ai/provider-auth";
+import { isCliAuthConfig } from "../../ai/provider-status";
 import { WatcherOrchestrator } from "../../watcher/orchestrator";
 import { TuiStore } from "../../tui/store";
 import { startTui } from "../../tui/app";
@@ -21,6 +23,17 @@ export async function watchCommand(options: {
       `Configuration error: ${error instanceof Error ? error.message : error}`,
     );
     process.exit(1);
+  }
+
+  if (isCliAuthConfig(config.ai)) {
+    try {
+      await ensureCliProviderReady(config.ai);
+    } catch (error) {
+      console.error(
+        `Configuration error: ${error instanceof Error ? error.message : error}`,
+      );
+      process.exit(1);
+    }
   }
 
   const store = new TuiStore(config.repos);

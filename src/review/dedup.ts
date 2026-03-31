@@ -27,4 +27,10 @@ export class ReviewDeduplicator {
       }
     }
   }
+
+  clear(): number {
+    const cleared = this.processedIterations.size;
+    this.processedIterations.clear();
+    return cleared;
+  }
 }

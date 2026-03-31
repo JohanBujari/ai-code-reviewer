@@ -35,6 +35,8 @@ export function StatusBar({ errors }: StatusBarProps) {
         <KeyBadge keyChar="p" label="pause/resume" />
         <Text color={THEME.divider}>{"\u2502"}</Text>
         <KeyBadge keyChar="r" label="refresh" />
+        <Text color={THEME.divider}>{"\u2502"}</Text>
+        <KeyBadge keyChar="x" label="reset state" />
       </Box>
       {lastError && (
         <Box marginTop={1}>

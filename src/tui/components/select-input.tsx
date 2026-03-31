@@ -7,6 +7,7 @@ export interface SelectItem {
   value: string;
   description?: string;
   icon?: string;
+  kind?: 'item' | 'heading';
 }
 
 interface SelectInputProps {
@@ -16,25 +17,55 @@ interface SelectInputProps {
   accentColor?: string;
 }
 
+type InputKey = {
+  escape?: boolean;
+  upArrow?: boolean;
+  downArrow?: boolean;
+  return?: boolean;
+};
+
 export function SelectInput({ items, onSelect, onBack, accentColor = THEME.primary }: SelectInputProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const getSelectableIndexes = () =>
+    items
+      .map((item, index) => (item.kind === 'heading' ? -1 : index))
+      .filter((index) => index >= 0);
+
+  const [activeIndex, setActiveIndex] = useState(() => getSelectableIndexes()[0] ?? 0);
 
   // Reset selection when items change (e.g. after delete, or navigating back)
   useEffect(() => {
-    setActiveIndex(0);
-  }, [items.length]);
+    const selectableIndexes = getSelectableIndexes();
+    if (selectableIndexes.length === 0) {
+      setActiveIndex(0);
+      return;
+    }
+    if (!selectableIndexes.includes(activeIndex)) {
+      setActiveIndex(selectableIndexes[0]);
+    }
+  }, [items.length, activeIndex]);
 
-  useInput((input, key) => {
+  useInput((input: string, key: InputKey) => {
     if (key.escape && onBack) {
       onBack();
       return;
     }
-    if (items.length === 0) return;
+    const selectableIndexes = getSelectableIndexes();
+    if (selectableIndexes.length === 0) return;
     if (key.upArrow || input === 'k') {
-      setActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
+      setActiveIndex((prev) => {
+        const currentPos = selectableIndexes.indexOf(prev);
+        const nextPos =
+          currentPos <= 0 ? selectableIndexes.length - 1 : currentPos - 1;
+        return selectableIndexes[nextPos];
+      });
     }
     if (key.downArrow || input === 'j') {
-      setActiveIndex((prev) => (prev >= items.length - 1 ? 0 : prev + 1));
+      setActiveIndex((prev) => {
+        const currentPos = selectableIndexes.indexOf(prev);
+        const nextPos =
+          currentPos >= selectableIndexes.length - 1 ? 0 : currentPos + 1;
+        return selectableIndexes[nextPos];
+      });
     }
     if (key.return) {
       onSelect(items[activeIndex]);
@@ -44,6 +75,16 @@ export function SelectInput({ items, onSelect, onBack, accentColor = THEME.prima
   return (
     <Box flexDirection="column" paddingX={1}>
       {items.map((item, index) => {
+        if (item.kind === 'heading') {
+          return (
+            <Box key={item.value} marginTop={index === 0 ? 0 : 1}>
+              <Text color={THEME.textDimmer} bold>
+                {item.label}
+              </Text>
+            </Box>
+          );
+        }
+
         const isActive = index === activeIndex;
         return (
           <Box key={item.value} gap={1}>

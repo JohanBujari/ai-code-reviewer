@@ -1,6 +1,6 @@
 # axiom-pr
 
-AI-powered pull request reviewer for Azure DevOps. Supports **OpenAI**, **Claude (Anthropic)**, and **Azure OpenAI**.
+AI-powered pull request reviewer for Azure DevOps. Supports **Codex CLI**, **Claude Code**, **OpenAI**, and **Anthropic**.
 
 Two modes of operation:
 
@@ -37,9 +37,24 @@ Alternatively, you can use a `.env` file or environment variables:
 AZURE_DEVOPS_ORG=your-org
 AZURE_DEVOPS_PAT=your-personal-access-token
 
-# AI Provider: openai | anthropic | azure-openai
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+# AI Provider: codex | claude | openai | anthropic
+AI_PROVIDER=codex
+
+# If using Codex, run:
+# codex login
+# Optional:
+# CODEX_MODEL=gpt-5.4
+# CODEX_REASONING_EFFORT=medium
+
+# If using Claude Code, run:
+# claude
+# then /login
+# Optional:
+# CLAUDE_MODEL=sonnet
+# CLAUDE_EFFORT=medium
+
+# If using OpenAI instead:
+# OPENAI_API_KEY=sk-...
 
 # Repositories to watch (watch mode only, format: project/repoId/displayName)
 WATCH_REPOS=MyProject/repo-guid-or-name/my-repo
@@ -83,11 +98,13 @@ axiom-pr watch --state-file ./my-state.json
 # Use a specific profile
 axiom-pr watch --profile work
 
-# From a local repo checkout instead of npm
+# From a local repo checkout instead of npm/published binaries
 npm install
-npm run build
-node dist/cli.mjs watch
+npm run cli -- watch
 ```
+
+When you are modifying this repo locally, prefer `npm run cli -- ...` over `npx axiom-pr`.
+`npx axiom-pr` may resolve the published package instead of your current working tree, which can make fixes appear to "not apply" during testing.
 
 ### Review a single PR
 
@@ -96,11 +113,14 @@ axiom-pr review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/
 
 # With a specific profile
 axiom-pr review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123 --profile client-x
+
+# From the local repo checkout
+npm run cli -- review https://dev.azure.com/my-org/MyProject/_git/my-repo/pullrequest/123
 ```
 
 ### Configuration Profiles
 
-Axiom supports named profiles for managing multiple Azure DevOps organizations or different configurations. Each profile stores its own org, PAT, and watched repos. AI provider and API keys can be stored in both global (shared defaults) and profiles; profile values override global when set.
+Axiom supports named profiles for managing multiple Azure DevOps organizations or different configurations. Each profile stores its own org, PAT, watched repos, and provider choice. OpenAI/Anthropic API keys are still supported in profiles; Codex/Claude use the local CLI login state instead of storing provider credentials.
 
 ```bash
 # Profile management
@@ -121,16 +141,14 @@ On first run, the TUI prompts you to name your profile. On subsequent runs, you'
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "activeProfile": "work",
-  "global": {
-    "AI_PROVIDER": "anthropic",
-    "ANTHROPIC_API_KEY": "sk-ant-..."
-  },
+  "global": {},
   "profiles": {
     "work": {
       "AZURE_DEVOPS_ORG": "my-work-org",
       "AZURE_DEVOPS_PAT": "pat-...",
+      "AI_PROVIDER": "codex",
       "WATCH_REPOS": "ProjectA/id1/Repo1"
     },
     "client-x": {
@@ -143,7 +161,7 @@ On first run, the TUI prompts you to name your profile. On subsequent runs, you'
 }
 ```
 
-Keys can live in `global` (shared defaults) or in profiles (profile-specific). Profile values override global when both are set — for example, `client-x` above uses OpenAI instead of the global Anthropic default. Environment variables and `.env` always take highest priority.
+Environment variables and `.env` always take highest priority. Any legacy Azure OpenAI settings are removed automatically the next time the config file is loaded.
 
 ### TUI Keyboard Shortcuts
 
@@ -152,7 +170,7 @@ Keys can live in `global` (shared defaults) or in profiles (profile-specific). P
 | `q` | Quit |
 | `p` | Pause/resume polling |
 | `r` | Force immediate refresh |
-| `c` | Clear active profile credentials and exit |
+| `x` | Reset saved review state for the current provider and watched repos |
 
 ### TUI Display
 
@@ -161,7 +179,7 @@ The terminal UI shows:
 - **Header** — watching status, uptime, last poll time
 - **Repo List** — repositories being watched
 - **PR Queue** — pending, in-progress, and completed reviews
-- **Review Progress** — current file being reviewed with progress bar
+- **Review Progress** — current stage, chunk info, and file download progress
 - **Logs** — real-time log output with timestamps
 - **Status Bar** — keyboard shortcuts and last error
 
@@ -184,9 +202,20 @@ The watcher saves state to `~/.axiom/axiom-state.json` by default (configurable 
 8. Sets PR status (succeeded/failed based on critical issues)
 9. Saves state to prevent duplicate reviews
 
+### Review Scope And Chunk Counts
+
+The review progress UI intentionally shows more than one file count:
+
+- `changed` is the total number of changed files reported by Azure DevOps for the PR.
+- `reviewable` is the subset left after skipping deleted files and built-in ignore patterns such as lockfiles, images, `dist/`, and `node_modules/`.
+- `capped to` is how many files Axiom will actually review after applying `maxFiles` (default: `30`).
+- `Chunk 3/4 • 6 files` means the current provider request contains 6 files in that chunk, not that the whole PR only has 6 files.
+
+For Codex and Claude, chunking is based on the fully rendered embedded review packet size, so chunk file counts vary depending on diff size, project context, and PR thread context.
+
 ## Library Usage (Webhook Mode)
 
-For integration into your own server. Install it locally with `npm install axiom-pr`.
+For integration into your own server. Install it locally with `npm install axiom-pr`. Library mode supports OpenAI/Anthropic API keys and the same local Codex/Claude CLI auth flow used by the TUI.
 
 ### Express
 
@@ -278,10 +307,9 @@ const reviewer = createPrReviewer({
   azureDevOps: { org: "my-org", pat: process.env.AZURE_DEVOPS_PAT! },
   webhookSecret: process.env.WEBHOOK_SECRET!,
   ai: {
-    provider: "azure-openai",
-    endpoint: process.env.AZURE_OPENAI_ENDPOINT!,
-    apiKey: process.env.AZURE_OPENAI_API_KEY!,
-    deployment: "gpt-4o",
+    transport: "provider-cli",
+    provider: "codex",
+    model: "gpt-5.2",
   },
 });
 
@@ -301,10 +329,47 @@ export class PrReviewController {
 
 ## AI Provider Configuration
 
+### Codex CLI
+
+```typescript
+ai: {
+  transport: 'provider-cli',
+  provider: 'codex',
+  model: 'gpt-5.2', // optional
+  reasoningEffort: 'medium', // optional, default: 'medium'
+}
+```
+
+Requires a local Codex install plus `codex login`.
+
+Supported `reasoningEffort` values: `low`, `medium`, `high`, `xhigh`.
+
+If the CLI is installed outside your shell `PATH`, set `CODEX_BIN=/absolute/path/to/codex`.
+
+### Claude Code
+
+```typescript
+ai: {
+  transport: 'provider-cli',
+  provider: 'claude',
+  model: 'sonnet', // optional
+  effort: 'medium', // optional, default: 'medium'
+}
+```
+
+Requires a local Claude Code install plus `claude`, then `/login`.
+
+Supported `effort` values: `low`, `medium`, `high`, `max`.
+
+If the CLI is installed outside your shell `PATH`, set `CLAUDE_BIN=/absolute/path/to/claude`.
+
+For provider-CLI reviews, Axiom uses its own explicit Codex/Claude effort settings instead of inheriting heavier personal CLI defaults, so PR review latency stays predictable across machines.
+
 ### OpenAI
 
 ```typescript
 ai: {
+  transport: 'api-key',
   provider: 'openai',
   apiKey: 'sk-...',
   model: 'gpt-5.2', // optional, default: 'gpt-5.2'
@@ -315,21 +380,10 @@ ai: {
 
 ```typescript
 ai: {
+  transport: 'api-key',
   provider: 'anthropic',
   apiKey: 'sk-ant-...',
   model: 'claude-sonnet-4-5', // optional, this is the default
-}
-```
-
-### Azure OpenAI
-
-```typescript
-ai: {
-  provider: 'azure-openai',
-  endpoint: 'https://my-resource.openai.azure.com',
-  apiKey: 'your-api-key',
-  deployment: 'gpt-4o',
-  apiVersion: '2024-02-01', // optional
 }
 ```
 
@@ -362,16 +416,16 @@ ai: {
 |----------|----------|-------------|
 | `AZURE_DEVOPS_ORG` | Yes | Azure DevOps organization name |
 | `AZURE_DEVOPS_PAT` | Yes | Personal access token |
-| `AI_PROVIDER` | Yes | `openai`, `anthropic`, or `azure-openai` |
+| `AI_PROVIDER` | Yes | `codex`, `claude`, `openai`, or `anthropic` |
+| `CODEX_MODEL` | No | Optional model override when `AI_PROVIDER=codex` |
+| `CODEX_REASONING_EFFORT` | No | Optional Codex thinking budget: `low`, `medium`, `high`, `xhigh` (default: `medium`) |
+| `CLAUDE_MODEL` | No | Optional model override when `AI_PROVIDER=claude` |
+| `CLAUDE_EFFORT` | No | Optional Claude thinking budget: `low`, `medium`, `high`, `max` (default: `medium`) |
 | `OPENAI_API_KEY` | If openai | OpenAI API key |
 | `WATCH_REPOS` | Watch only | Comma-separated repos: `project/repoId/name` |
 | `OPENAI_MODEL` | No | Override model (default: `gpt-5.2`) |
 | `ANTHROPIC_API_KEY` | If anthropic | Anthropic API key |
 | `ANTHROPIC_MODEL` | No | Override model (default: `claude-sonnet-4-5`) |
-| `AZURE_OPENAI_ENDPOINT` | If azure-openai | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_API_KEY` | If azure-openai | Azure OpenAI API key |
-| `AZURE_OPENAI_DEPLOYMENT` | If azure-openai | Deployment name |
-| `AZURE_OPENAI_API_VERSION` | No | API version (default: `2024-02-01`) |
 
 ## Azure DevOps Setup
 
@@ -484,9 +538,12 @@ src/
 │   │   └── use-cli-reducer.ts
 │   ├── phases/             # Phase-specific UI components
 │   └── components/         # Shared UI components
-├── ai/                     # AI provider (Vercel AI SDK)
+├── ai/                     # AI provider backends + CLI probes
 │   ├── provider.ts         # Interface + system prompt
-│   ├── vercel-ai-provider.ts  # OpenAI/Anthropic/Azure via Vercel AI SDK
+│   ├── cli-provider.ts        # Codex/Claude CLI-backed reviews
+│   ├── provider-auth.ts       # CLI probe + auth normalization
+│   ├── factory.ts             # Provider factory
+│   ├── vercel-ai-provider.ts  # OpenAI/Anthropic via Vercel AI SDK
 │   └── tools.ts            # AI tool definitions
 ├── azure-devops/
 │   └── client.ts           # Azure DevOps REST API client

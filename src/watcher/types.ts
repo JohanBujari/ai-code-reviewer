@@ -25,13 +25,14 @@ export interface PersistedPrState {
   prId: number;
   repoId: string;
   project: string;
+  providerKey?: string;
   lastReviewedIterationId: number;
   lastReviewedAt: string;
   reviewCount: number;
 }
 
 export interface PersistedState {
-  version: 1;
+  version: 2;
   reviewedPrs: PersistedPrState[];
   lastPollAt?: string;
 }
@@ -43,6 +44,7 @@ export type WatcherEvent =
   | { type: 'fatal-error'; error: string }
   | { type: 'review-queued'; job: ReviewJob }
   | { type: 'review-start'; job: ReviewJob }
+  | { type: 'review-stage'; jobId: string; label: string; detail?: string }
   | { type: 'review-file-progress'; jobId: string; filePath: string; fileIndex: number; totalFiles: number }
   | { type: 'review-complete'; job: ReviewJob }
   | { type: 'review-failed'; job: ReviewJob; error: string }

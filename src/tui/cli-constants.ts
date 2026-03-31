@@ -39,6 +39,7 @@ export type Phase =
   | "manage-profile-action"
   | "setup-guide"
   | "config"
+  | "provider-check"
   | "review-url"
   | "reviewing"
   | "review-done"
