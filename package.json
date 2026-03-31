@@ -1,6 +1,6 @@
 {
   "name": "axiom-pr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered pull request reviewer for Azure DevOps. Supports Codex CLI, Claude Code, OpenAI, and Anthropic. Includes CLI watcher with TUI.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
