@@ -52,7 +52,7 @@ export interface PrReviewerOptions {
 }
 
 export const DEFAULTS = {
-  maxFiles: 30,
+  maxFiles: Infinity,
   maxDiffLength: 10_000,
   openAiModel: 'gpt-5.2',
   anthropicModel: 'claude-sonnet-4-5',
